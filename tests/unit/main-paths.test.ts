@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import {
@@ -105,7 +105,7 @@ describe("resolveWorkspacePath", () => {
 	});
 
 	test("assertWorkspaceDirectory exige diretório existente", async () => {
-		expect((await assertWorkspaceDirectory(root)).toLowerCase()).toBe(root.toLowerCase());
+		expect((await assertWorkspaceDirectory(root)).toLowerCase()).toBe((await realpath(root)).toLowerCase());
 		await expect(assertWorkspaceDirectory(path.join(root, "raiz.txt"))).rejects.toThrow(PathValidationError);
 		await expect(assertWorkspaceDirectory(path.join(root, "sumiu"))).rejects.toThrow(PathValidationError);
 	});
