@@ -883,12 +883,15 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 				</div>
 
 				<div className="onb__foot">
+					<button type="button" className="btn btn--ghost onb__close-foot" onClick={finish}>
+						{t("onb.close")}
+					</button>
 					{step > 0 ? (
 						<button type="button" className="btn" onClick={() => setStep(step - 1)}>
 							{t("onb.back")}
 						</button>
 					) : (
-						<button type="button" className="btn btn--ghost" onClick={finish}>
+						<button type="button" className="btn btn--ghost onb__skip" onClick={finish}>
 							{t("onb.skip")}
 						</button>
 					)}

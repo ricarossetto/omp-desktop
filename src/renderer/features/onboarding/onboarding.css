@@ -347,9 +347,20 @@
 	flex: 1;
 }
 
+.onb__foot .onb__close-foot {
+	display: none;
+}
+
 @media (max-width: 1100px) {
 	.onb__nav {
 		display: none;
+	}
+	/* A navegação lateral some; o fechamento continua disponível no rodapé. */
+	.onb__foot .onb__skip {
+		display: none;
+	}
+	.onb__foot .onb__close-foot {
+		display: inline-flex;
 	}
 }
 
