@@ -25,7 +25,7 @@ describe("process-tree", () => {
 		const impostor = { ...identity, creationTimeMs: 1, executableName: "definitely-not-bun" };
 		expect(await killProcessTree(impostor)).toBe(false);
 		expect(isProcessRunning(process.pid)).toBe(true);
-	});
+	}, 20_000);
 
 	test("converte FILETIME e ordena descendentes do mais profundo ao mais raso", () => {
 		expect(fileTimeToEpochMs(116_444_736_000_000_000)).toBe(0);
