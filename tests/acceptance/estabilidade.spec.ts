@@ -74,8 +74,12 @@ test("janela de 1000px usa gaveta e mostra aprovação", async () => {
 	await p.getByText("workspace", { exact: true }).first().click();
 	await l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 700));
 	await p.waitForTimeout(600);
-	// Ctrl+B abre a gaveta da barra lateral em janelas estreitas.
-	await p.keyboard.press("Control+b");
+	// A gaveta pode já estar aberta ao reduzir a janela; alterna só se preciso.
+	const newSession = p.getByRole("button", { name: "Nova sessão" }).first();
+	if (!(await newSession.isVisible().catch(() => false))) {
+		await p.keyboard.press("Control+b");
+		await p.waitForTimeout(300);
+	}
 	const box = await openSessionWithoutWorkspaceClick(l);
 	await box.fill("pergunte");
 	await box.press("Enter");
