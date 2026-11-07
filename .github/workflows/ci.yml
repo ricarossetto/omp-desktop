@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Instalar dependências (sem scripts de terceiros)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Baixar o binário do Electron
+        run: node node_modules/electron/install.js
+
+      - name: Tipos
+        run: bun run typecheck
+
+      - name: Testes unitários
+        run: bun test tests/unit
+
+      - name: Build
+        run: bun run build
+
+      # A aceitação abre o Electron de verdade e usa um OMP de teste (fixture),
+      # então não precisa de credenciais nem consome cota.
+      - name: Aceitação (Electron + OMP de teste)
+        run: bunx playwright test
+        env:
+          CI: "1"
+
+      - name: Guardar capturas em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+          if-no-files-found: ignore

@@ -1,0 +1,169 @@
+/* Diálogos de aprovação das ferramentas. */
+
+.dialog {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+
+.dialog__message {
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.dialog__options {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+
+.dialog__option {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--panel-sunken);
+	cursor: pointer;
+}
+
+.dialog__option:hover {
+	border-color: var(--border-strong);
+}
+
+.dialog__option--selected {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+}
+
+.dialog__option input {
+	margin: 3px 0 0;
+	accent-color: var(--accent);
+	flex: none;
+}
+
+.dialog__option-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.dialog__option-label {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-weight: 600;
+	word-break: break-word;
+}
+
+.dialog__option-detail {
+	color: var(--muted);
+	font-size: var(--text-xs);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.dialog__preview {
+	margin: var(--space-1) 0 0;
+	padding: var(--space-2);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--code-bg);
+	font-family: var(--font-mono);
+	font-size: 11px;
+	max-height: 180px;
+	overflow: auto;
+	white-space: pre-wrap;
+}
+
+.dialog__questions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+
+.dialog__question {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin: 0;
+	padding: var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	min-width: 0;
+}
+
+.dialog__question legend {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 0 var(--space-1);
+	font-weight: 600;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.dialog__question-header {
+	color: var(--muted);
+	font-size: var(--text-xs);
+	font-weight: 600;
+}
+
+.dialog__custom {
+	margin-top: var(--space-1);
+}
+
+.dialog__secret {
+	display: flex;
+	gap: var(--space-2);
+	align-items: center;
+}
+
+.dialog__secret .input {
+	flex: 1;
+}
+
+.dialog__editor {
+	min-height: 220px;
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+}
+
+.dialog__details p {
+	margin: 0;
+}
+
+/* Diálogo de aprovação no padrão do protótipo. */
+.dialog__question {
+	padding: 0;
+	border: 0;
+}
+
+.dialog__question-header,
+.dialog__question legend {
+	padding: 0;
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.dialog__option {
+	padding: 6px var(--space-2);
+	background: transparent;
+	font-size: 13px;
+	transition: background 120ms ease-out;
+}
+
+.dialog__option:hover {
+	background: var(--hover);
+}
+
+.dialog__option-label {
+	font-weight: 400;
+}
+
+.dialog__option--selected .dialog__option-label {
+	font-weight: 600;
+}

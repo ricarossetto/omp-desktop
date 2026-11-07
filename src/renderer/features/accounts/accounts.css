@@ -1,0 +1,409 @@
+/* Contas e cotas (UI_B). */
+.omp-accounts {
+	--omp-bg: var(--bg, #111315);
+	--omp-panel: var(--panel, #191c1f);
+	--omp-text: var(--text, #e6e8ea);
+	--omp-muted: var(--muted, #a4aab2);
+	--omp-border: var(--border, #32383f);
+	--omp-accent: var(--accent, #83b4e8);
+	--omp-success: var(--success, #63bd8d);
+	--omp-warning: var(--warning, #e0b45c);
+	--omp-error: var(--error, #e37f7f);
+	--omp-radius-sm: var(--radius-sm, 4px);
+	--omp-radius-md: var(--radius-md, 8px);
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	color: var(--omp-text);
+	font-family: var(--font-ui, "Segoe UI Variable", "Segoe UI", sans-serif);
+}
+
+.omp-accounts *,
+.omp-accounts *::before,
+.omp-accounts *::after {
+	box-sizing: border-box;
+}
+
+.omp-accounts-section {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	padding: 12px;
+	background: var(--omp-panel);
+	min-width: 0;
+}
+.omp-accounts-section h2 {
+	margin: 0;
+	font-size: 14px;
+}
+.omp-accounts-section h3 {
+	margin: 0;
+	font-size: 14px;
+}
+
+.omp-accounts-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+.omp-accounts-head p {
+	margin: 2px 0 0;
+}
+
+.omp-muted {
+	color: var(--omp-muted);
+	font-size: 12px;
+}
+.omp-icon {
+	flex: none;
+	vertical-align: -2px;
+}
+
+.omp-accounts-empty {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 12px;
+	border: 1px dashed var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	color: var(--omp-muted);
+}
+.omp-accounts-empty p {
+	margin: 0;
+}
+
+.omp-message {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+	font-size: 14px;
+	margin: 0;
+}
+.omp-message > span {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.omp-message-success {
+	border-color: color-mix(in srgb, var(--omp-success) 55%, var(--omp-border));
+}
+.omp-message-success .omp-icon {
+	color: var(--omp-success);
+}
+.omp-message-warning {
+	border-color: color-mix(in srgb, var(--omp-warning) 55%, var(--omp-border));
+}
+.omp-message-warning .omp-icon {
+	color: var(--omp-warning);
+}
+.omp-message-error {
+	border-color: color-mix(in srgb, var(--omp-error) 55%, var(--omp-border));
+}
+.omp-message-error .omp-icon {
+	color: var(--omp-error);
+}
+.omp-message-info .omp-icon {
+	color: var(--omp-accent);
+}
+
+/* Uso */
+.omp-usage-provider {
+	border-top: 1px solid var(--omp-border);
+	padding-top: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.omp-usage-account {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+}
+.omp-usage-account-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 14px;
+}
+.omp-usage-account p {
+	margin: 0;
+}
+
+.omp-usage-window {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	font-size: 12px;
+}
+.omp-usage-window-head {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+}
+.omp-usage-percent {
+	color: var(--omp-text);
+	font-variant-numeric: tabular-nums;
+}
+.omp-usage-bar {
+	height: 6px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--omp-text) 10%, var(--omp-bg));
+	overflow: hidden;
+}
+.omp-usage-fill {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--omp-accent);
+}
+.omp-usage-fill-warning {
+	background: var(--omp-warning);
+}
+.omp-usage-fill-error {
+	background: var(--omp-error);
+}
+.omp-usage-error .omp-usage-percent {
+	color: var(--omp-error);
+}
+.omp-usage-warning .omp-usage-percent {
+	color: var(--omp-warning);
+}
+
+/* Provedores */
+.omp-provider-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.omp-provider-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	background: var(--omp-bg);
+	min-width: 0;
+}
+.omp-provider-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+}
+.omp-provider-name {
+	margin: 0;
+	font-weight: 600;
+	font-size: 14px;
+}
+.omp-provider-head p {
+	margin: 0;
+}
+.omp-provider-accounts {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	border-top: 1px solid var(--omp-border);
+	padding-top: 8px;
+}
+.omp-account-row {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 8px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	flex-wrap: wrap;
+}
+.omp-account-row p {
+	margin: 0;
+	font-size: 14px;
+}
+
+.omp-login-consent,
+.omp-open-url-panel,
+.omp-terminal-guidance {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 50%, var(--omp-border));
+	border-radius: var(--omp-radius-md);
+	background: var(--omp-bg);
+}
+.omp-login-consent h3,
+.omp-open-url-panel h3,
+.omp-terminal-guidance h3 {
+	margin: 0;
+	font-size: 14px;
+}
+.omp-login-consent p,
+.omp-open-url-panel p,
+.omp-terminal-guidance p {
+	margin: 0;
+	font-size: 14px;
+	overflow-wrap: anywhere;
+}
+
+.omp-open-url-row {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 6px 0;
+	border-top: 1px solid var(--omp-border);
+}
+.omp-open-url-row code {
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+	word-break: break-all;
+	color: var(--omp-muted);
+}
+
+.omp-terminal-guidance pre {
+	margin: 0;
+	padding: 8px;
+	background: color-mix(in srgb, var(--omp-text) 5%, var(--omp-bg));
+	border-radius: var(--omp-radius-sm);
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+	overflow-x: auto;
+}
+
+.omp-button {
+	appearance: none;
+	font: inherit;
+	font-size: 14px;
+	color: var(--omp-text);
+	background: var(--omp-bg);
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	padding: 5px 10px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.omp-button:hover:not(:disabled) {
+	border-color: var(--omp-accent);
+}
+.omp-button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.omp-button-small {
+	padding: 3px 8px;
+	font-size: 12px;
+}
+.omp-button-primary {
+	border-color: color-mix(in srgb, var(--omp-accent) 70%, var(--omp-border));
+	color: var(--omp-accent);
+}
+.omp-button-danger {
+	border-color: color-mix(in srgb, var(--omp-error) 60%, var(--omp-border));
+	color: var(--omp-error);
+}
+.omp-button:focus-visible {
+	outline: 2px solid var(--omp-accent);
+	outline-offset: 2px;
+}
+
+.omp-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.omp-inline-confirm {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 6px;
+	border: 1px solid color-mix(in srgb, var(--omp-warning) 45%, var(--omp-border));
+	border-radius: var(--omp-radius-sm);
+	font-size: 12px;
+}
+
+.omp-badge {
+	font-size: 12px;
+	border: 1px solid var(--omp-border);
+	border-radius: 999px;
+	padding: 0 6px;
+	color: var(--omp-muted);
+	line-height: 16px;
+	white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.omp-accounts *,
+	.omp-accounts *::before,
+	.omp-accounts *::after {
+		transition: none !important;
+		animation: none !important;
+	}
+}
+
+/* Busca de contas e provedores */
+.omp-accounts-search {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 10px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+}
+
+.omp-accounts-search .omp-icon {
+	color: var(--omp-muted);
+}
+
+.omp-accounts-search input {
+	flex: 1;
+	min-width: 0;
+	height: 34px;
+	border: 0;
+	background: transparent;
+	color: var(--omp-text);
+	font: inherit;
+	font-size: 14px;
+	outline: none;
+}
+
+.omp-accounts-search:focus-within {
+	box-shadow: 0 0 0 1px var(--omp-accent);
+}
+
+.omp-accounts-search .omp-icon-button {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	border: 0;
+	border-radius: var(--omp-radius-sm);
+	background: transparent;
+	color: var(--omp-muted);
+	font-size: 16px;
+	cursor: pointer;
+}
+
+.omp-accounts-search .omp-icon-button:hover {
+	background: var(--omp-panel);
+	color: var(--omp-text);
+}

@@ -1,0 +1,965 @@
+/* Estilos base do OMP Desktop. */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+	margin: 0;
+}
+
+html {
+	background: var(--bg);
+}
+
+body {
+	font-family: var(--font-ui);
+	font-size: var(--text-sm);
+	line-height: var(--line-height);
+	color: var(--text);
+	background: var(--bg);
+	overflow: hidden;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+	color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+	margin: 0;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+:focus {
+	outline: none;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+::selection {
+	background: var(--accent-soft);
+}
+
+/* Barras de rolagem discretas, sem animação. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: var(--scrollbar);
+	border: 3px solid transparent;
+	background-clip: padding-box;
+	border-radius: var(--radius-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--scrollbar-hover);
+	background-clip: padding-box;
+	border: 3px solid transparent;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tipografia utilitária                                              */
+/* ------------------------------------------------------------------ */
+
+.muted {
+	color: var(--muted);
+}
+
+.mono {
+	font-family: var(--font-mono);
+	font-size: 0.92em;
+}
+
+.text-xs {
+	font-size: var(--text-xs);
+}
+
+.text-sm {
+	font-size: var(--text-sm);
+}
+
+.text-lg {
+	font-size: var(--text-lg);
+}
+
+.truncate {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.stack-2 {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Botões                                                             */
+/* ------------------------------------------------------------------ */
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: 30px;
+	padding: var(--space-1) var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: transparent;
+	color: var(--text);
+	font-size: var(--text-sm);
+	cursor: pointer;
+	user-select: none;
+	transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+	white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+	background: var(--hover);
+	border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+	background: var(--pressed);
+}
+
+.btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.btn--primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-contrast);
+	font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+	background: var(--accent-strong);
+	border-color: var(--accent-strong);
+}
+
+.btn--danger {
+	border-color: var(--error);
+	color: var(--error);
+}
+
+.btn--danger:hover:not(:disabled) {
+	background: var(--error-soft);
+	border-color: var(--error);
+}
+
+.btn--ghost {
+	border-color: transparent;
+}
+
+.btn--ghost:hover:not(:disabled) {
+	border-color: var(--border);
+}
+
+.btn--sm {
+	min-height: 24px;
+	padding: 0 var(--space-2);
+	font-size: var(--text-xs);
+}
+
+.btn--block {
+	width: 100%;
+}
+
+.icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: var(--radius-sm);
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.icon-btn:hover:not(:disabled) {
+	background: var(--hover);
+	color: var(--text);
+}
+
+.icon-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.icon-btn--active {
+	background: var(--selected);
+	color: var(--accent);
+}
+
+.icon {
+	width: 16px;
+	height: 16px;
+	flex: none;
+	stroke: currentColor;
+	fill: none;
+	stroke-width: 1.6;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.icon--sm {
+	width: 14px;
+	height: 14px;
+}
+
+.icon--lg {
+	width: 20px;
+	height: 20px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Campos                                                             */
+/* ------------------------------------------------------------------ */
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+
+.field label,
+.field-label {
+	font-size: var(--text-xs);
+	color: var(--muted);
+	font-weight: 600;
+}
+
+.input,
+.textarea,
+.select {
+	width: 100%;
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--panel-sunken);
+	color: var(--text);
+	font-size: var(--text-sm);
+	line-height: 1.45;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+	color: var(--muted);
+	opacity: 0.85;
+}
+
+.input:focus-visible,
+.textarea:focus-visible,
+.select:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+	border-color: var(--accent);
+}
+
+.textarea {
+	resize: vertical;
+	min-height: 72px;
+	font-family: var(--font-ui);
+}
+
+.checkbox,
+.radio {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: var(--space-2);
+	cursor: pointer;
+	line-height: 1.4;
+}
+
+.checkbox input,
+.radio input {
+	margin: 3px 0 0;
+	accent-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Avisos, badges e estados                                           */
+/* ------------------------------------------------------------------ */
+
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	padding: 1px var(--space-2);
+	border: 1px solid var(--border-control);
+	border-radius: var(--radius-pill);
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.badge--accent {
+	border-color: var(--accent);
+	color: var(--accent-strong);
+	background: var(--accent-soft);
+}
+
+.badge--success {
+	border-color: var(--success);
+	color: var(--success-strong);
+	background: var(--success-soft);
+}
+
+.badge--warning {
+	border-color: var(--warning);
+	color: var(--warning-strong);
+	background: var(--warning-soft);
+}
+
+.badge--error {
+	border-color: var(--error);
+	color: var(--error-strong);
+	background: var(--error-soft);
+}
+
+.banner {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--border);
+	border-left-width: 3px;
+	border-radius: var(--radius-sm);
+	background: var(--panel-raised);
+	font-size: var(--text-xs);
+	line-height: 1.45;
+}
+
+.banner--info {
+	border-left-color: var(--info);
+}
+
+.banner--success {
+	border-left-color: var(--success);
+}
+
+.banner--warning {
+	border-left-color: var(--warning);
+}
+
+.banner--error {
+	border-left-color: var(--error);
+}
+
+.banner__body {
+	flex: 1;
+	min-width: 0;
+}
+
+.banner__title {
+	font-weight: 600;
+}
+
+.banner .icon {
+	margin-top: 2px;
+}
+
+.state-icon {
+	display: inline-flex;
+	flex: none;
+}
+
+.state-icon--success {
+	color: var(--success);
+}
+
+.state-icon--warning {
+	color: var(--warning);
+}
+
+.state-icon--error {
+	color: var(--error);
+}
+
+.state-icon--info {
+	color: var(--info);
+}
+
+.state-icon--muted {
+	color: var(--muted);
+}
+
+.spinner-static {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--border-strong);
+	border-top-color: var(--accent);
+	border-radius: 50%;
+}
+
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	padding: var(--space-6);
+	text-align: center;
+	color: var(--muted);
+}
+
+.empty-state h2 {
+	font-size: var(--text-md);
+	color: var(--text);
+	font-weight: 600;
+}
+
+.empty-state p {
+	max-width: 46ch;
+}
+
+.skeleton {
+	background: var(--panel-raised);
+	border-radius: var(--radius-sm);
+	opacity: 0.7;
+}
+
+/* ------------------------------------------------------------------ */
+/* Modais                                                             */
+/* ------------------------------------------------------------------ */
+
+.overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-4);
+	background: var(--backdrop);
+}
+
+.modal {
+	display: flex;
+	flex-direction: column;
+	width: min(720px, 100%);
+	max-height: calc(100vh - 48px);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--panel);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+}
+
+.modal--wide {
+	width: min(980px, 100%);
+}
+
+.modal--full {
+	width: calc(100vw - 48px);
+	height: calc(100vh - 48px);
+}
+
+.modal__header {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-3) var(--space-4);
+	border-bottom: 1px solid var(--border);
+}
+
+.modal__title {
+	flex: 1;
+	min-width: 0;
+	font-size: var(--text-md);
+	font-weight: 600;
+}
+
+.modal__body {
+	flex: 1;
+	min-height: 0;
+	padding: var(--space-4);
+	overflow: auto;
+}
+
+.modal__footer {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: var(--space-2);
+	padding: var(--space-3) var(--space-4);
+	border-top: 1px solid var(--border);
+}
+
+.modal__footer .modal__hint {
+	margin-right: auto;
+	color: var(--muted);
+	font-size: var(--text-xs);
+}
+
+/* ------------------------------------------------------------------ */
+/* Toasts                                                             */
+/* ------------------------------------------------------------------ */
+
+.toasts {
+	position: fixed;
+	right: var(--space-4);
+	bottom: var(--space-4);
+	z-index: 80;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	max-width: 420px;
+	pointer-events: none;
+}
+
+.toast {
+	pointer-events: auto;
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--border);
+	border-left-width: 3px;
+	border-radius: var(--radius-sm);
+	background: var(--panel-raised);
+	box-shadow: var(--shadow-soft);
+	font-size: var(--text-xs);
+}
+
+.toast--info {
+	border-left-color: var(--info);
+}
+
+.toast--success {
+	border-left-color: var(--success);
+}
+
+.toast--warning {
+	border-left-color: var(--warning);
+}
+
+.toast--error {
+	border-left-color: var(--error);
+}
+
+.toast__body {
+	flex: 1;
+	min-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout e estados de carga                                          */
+/* ------------------------------------------------------------------ */
+
+.app-loading {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-3);
+	height: 100%;
+	color: var(--muted);
+}
+
+.app-loading__title {
+	font-size: var(--text-md);
+	color: var(--text);
+	font-weight: 600;
+}
+
+.app-fatal {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	padding: var(--space-6);
+}
+
+.app-fatal__card {
+	width: min(640px, 100%);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--panel);
+	padding: var(--space-5);
+	box-shadow: var(--shadow-soft);
+}
+
+.app-diagnostics {
+	height: 100%;
+	overflow: auto;
+}
+
+.app-fatal pre {
+	max-height: 220px;
+	overflow: auto;
+	margin: var(--space-3) 0 0;
+	padding: var(--space-3);
+	border-radius: var(--radius-sm);
+	background: var(--code-bg);
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+@media (max-width: 1000px) {
+	:root {
+		--right-panel-width: 340px;
+	}
+}
+
+/* ------------------------------------------------------------------ */
+/* Moldura da janela e barra de título própria                         */
+/* ------------------------------------------------------------------ */
+
+.app-frame {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.app-frame__body {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+}
+
+.titlebar {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	height: var(--titlebar-height);
+	flex: none;
+	/* À direita ficam minimizar, maximizar e fechar do Windows (overlay de ~138px). */
+	padding: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))) 0 var(--space-3);
+	background: var(--bg);
+	border-bottom: 1px solid var(--border);
+	color: var(--muted);
+	font-size: var(--text-xs);
+	user-select: none;
+	-webkit-app-region: drag;
+}
+
+.titlebar button {
+	-webkit-app-region: no-drag;
+}
+
+/* Com um diálogo aberto, a faixa deixa de arrastar para o fundo do diálogo receber cliques.
+   Configurações começam abaixo da barra de título, então a faixa continua arrastável. */
+body:has(.overlay:not(.overlay--settings), .drawer-layer) .titlebar {
+	-webkit-app-region: no-drag;
+}
+
+.titlebar__brand {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+	min-width: 0;
+	padding-right: var(--space-2);
+	border-right: 1px solid var(--border);
+	height: 20px;
+}
+
+.titlebar__name {
+	color: var(--text);
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.titlebar__name-sub {
+	margin-left: 4px;
+	font-weight: 400;
+	color: var(--muted);
+}
+
+.titlebar__title {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	flex: 1;
+	min-width: 0;
+	font-size: 13px;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.titlebar__sep {
+	color: var(--border-strong);
+}
+
+.titlebar__session {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.titlebar__actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: none;
+}
+
+.titlebar__btn {
+	width: 28px;
+	height: 28px;
+}
+
+.brand-logo {
+	flex: none;
+}
+
+
+/* ================================================================== */
+/* Componentes compartilhados no padrão Bancada                        */
+/* ================================================================== */
+
+.btn {
+	min-height: 28px;
+	padding: 0 var(--space-3);
+	border-color: var(--border-control);
+	font-size: 13px;
+	/* Texto e fundo mudam juntos ao trocar o tema, sem contraste intermediário. */
+	transition: border-color 120ms ease-out;
+}
+
+.btn--sm {
+	min-height: 24px;
+	padding: 0 var(--space-2);
+	font-size: var(--text-xs);
+}
+
+.btn--ghost {
+	border-color: transparent;
+	color: var(--muted);
+}
+
+.btn--ghost:hover:not(:disabled) {
+	border-color: transparent;
+	color: var(--text);
+}
+
+.icon-btn--active {
+	background: var(--panel-raised);
+	color: var(--text);
+}
+
+/* Botões dos painéis antigos (omp-*) seguem a mesma regra do .btn. */
+.omp-button {
+	min-height: 28px;
+	padding: 0 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: transparent;
+	color: var(--text);
+	font-size: 13px;
+	line-height: 26px;
+}
+
+.omp-button:hover:not(:disabled) {
+	border-color: var(--border-strong);
+	background: var(--hover);
+}
+
+.omp-button-small {
+	min-height: 24px;
+	padding: 0 8px;
+	font-size: 12px;
+	line-height: 22px;
+}
+
+.omp-button-primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: var(--accent-contrast);
+	font-weight: 600;
+}
+
+.omp-button-primary:hover:not(:disabled) {
+	border-color: var(--accent-strong);
+	background: var(--accent-strong);
+}
+
+.omp-button-danger {
+	border-color: var(--error);
+	color: var(--error);
+}
+
+.omp-button-danger:hover:not(:disabled) {
+	background: var(--error-soft);
+}
+
+/* Avisos: borda inteira na cor do estado, fundo suave, ícone + texto. */
+.banner {
+	border-left-width: 1px;
+	font-size: 13px;
+}
+
+.banner--info {
+	border-color: var(--border);
+	color: var(--muted);
+}
+
+.banner--warning {
+	border-color: var(--warning);
+	background: var(--warning-soft);
+}
+
+.banner--error {
+	border-color: var(--error);
+	background: var(--error-soft);
+}
+
+.banner--success {
+	border-color: var(--success);
+	background: var(--success-soft);
+}
+
+.omp-message {
+	border-radius: var(--radius-sm);
+	font-size: 13px;
+}
+
+.omp-message-warning {
+	border: 1px solid var(--warning);
+	background: var(--warning-soft);
+}
+
+.omp-message-error {
+	border: 1px solid var(--error);
+	background: var(--error-soft);
+}
+
+.omp-message-success {
+	border: 1px solid var(--success);
+	background: var(--success-soft);
+}
+
+/* Modais: cabeçalho, corpo e rodapé como no protótipo. */
+.modal {
+	border-color: var(--border-strong);
+	background: var(--panel-raised);
+}
+
+.modal__header {
+	padding: var(--space-4) var(--space-4) var(--space-3);
+	border-bottom: 1px solid var(--border);
+}
+
+.modal__footer {
+	padding: var(--space-3) var(--space-4);
+	border-top: 1px solid var(--border);
+	gap: var(--space-2);
+}
+
+.field-label,
+.field > span {
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.input,
+.textarea {
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--panel);
+	color: var(--text);
+}
+
+.input:focus,
+.textarea:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Alvos de clique                                                    */
+/* ------------------------------------------------------------------ */
+
+/* WCAG 2.5.8: alvos de ponteiro com pelo menos 28px. */
+.attachment-chip {
+	min-height: 28px;
+}
+
+.attachment-chip__remove,
+.omp-icon-button {
+	min-width: 28px;
+	min-height: 28px;
+}
+
+.message__menu summary {
+	min-width: 28px;
+	min-height: 28px;
+}
+
+.thinking summary,
+.tool-card__details summary,
+.tool-card__diff > summary,
+.message__unknown summary {
+	min-height: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* Sem deslocamento no hover dos cartões de início. */
+	body .start-card:hover {
+		transform: none;
+	}
+}

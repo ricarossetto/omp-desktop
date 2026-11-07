@@ -1,0 +1,260 @@
+/* Diagnóstico do ambiente (UI_B). */
+.omp-diagnostics {
+	--omp-bg: var(--bg, #111315);
+	--omp-panel: var(--panel, #191c1f);
+	--omp-text: var(--text, #e6e8ea);
+	--omp-muted: var(--muted, #a4aab2);
+	--omp-border: var(--border, #32383f);
+	--omp-accent: var(--accent, #83b4e8);
+	--omp-success: var(--success, #63bd8d);
+	--omp-warning: var(--warning, #e0b45c);
+	--omp-error: var(--error, #e37f7f);
+	--omp-radius-sm: var(--radius-sm, 4px);
+	--omp-radius-md: var(--radius-md, 8px);
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	height: 100%;
+	overflow-y: auto;
+	padding: 16px;
+	box-sizing: border-box;
+	background: var(--omp-bg);
+	color: var(--omp-text);
+	font-family: var(--font-ui, "Segoe UI Variable", "Segoe UI", sans-serif);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.omp-diagnostics *,
+.omp-diagnostics *::before,
+.omp-diagnostics *::after {
+	box-sizing: border-box;
+}
+
+.omp-diagnostics-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+.omp-diagnostics-head h1 {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 600;
+}
+.omp-diagnostics-head p {
+	margin: 2px 0 0;
+}
+
+.omp-diagnostics-phase {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 12px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	background: var(--omp-panel);
+}
+.omp-diagnostics-phase-label {
+	margin: 0;
+	font-weight: 600;
+	font-size: 14px;
+}
+.omp-diagnostics-phase p {
+	margin: 0;
+}
+.omp-phase-ready .omp-icon {
+	color: var(--omp-success);
+}
+.omp-phase-starting-host .omp-icon {
+	color: var(--omp-accent);
+}
+.omp-phase-omp-missing .omp-icon {
+	color: var(--omp-warning);
+}
+.omp-phase-omp-incompatible .omp-icon,
+.omp-phase-host-failed .omp-icon {
+	color: var(--omp-error);
+}
+
+.omp-diagnostics-section {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	background: var(--omp-panel);
+}
+.omp-diagnostics-section h2 {
+	margin: 0;
+	font-size: 14px;
+}
+.omp-diagnostics-section p {
+	margin: 0;
+}
+.omp-diagnostics-section code,
+.omp-diagnostics-missing {
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+}
+.omp-diagnostics-section code {
+	padding: 1px 4px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+}
+.omp-diagnostics-section pre {
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+	overflow-x: auto;
+}
+
+.omp-diagnostics-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	gap: 8px 16px;
+	margin: 0;
+}
+.omp-diagnostics-grid > div {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.omp-diagnostics-grid dt {
+	color: var(--omp-muted);
+	font-size: 12px;
+}
+.omp-diagnostics-grid dd {
+	margin: 0;
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+.omp-diagnostics-missing {
+	color: var(--omp-warning);
+}
+
+.omp-muted {
+	color: var(--omp-muted);
+	font-size: 12px;
+}
+.omp-icon {
+	flex: none;
+	vertical-align: -2px;
+}
+
+.omp-message {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-panel);
+	font-size: 14px;
+	margin: 0;
+}
+.omp-message > span {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.omp-message-warning {
+	border-color: color-mix(in srgb, var(--omp-warning) 55%, var(--omp-border));
+}
+.omp-message-warning .omp-icon {
+	color: var(--omp-warning);
+}
+.omp-message-error {
+	border-color: color-mix(in srgb, var(--omp-error) 55%, var(--omp-border));
+}
+.omp-message-error .omp-icon {
+	color: var(--omp-error);
+}
+.omp-message-success {
+	border-color: color-mix(in srgb, var(--omp-success) 55%, var(--omp-border));
+}
+.omp-message-success .omp-icon {
+	color: var(--omp-success);
+}
+
+.omp-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.omp-button {
+	appearance: none;
+	font: inherit;
+	font-size: 14px;
+	color: var(--omp-text);
+	background: var(--omp-bg);
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	padding: 5px 10px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.omp-button:hover:not(:disabled) {
+	border-color: var(--omp-accent);
+}
+.omp-button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.omp-button-primary {
+	border-color: color-mix(in srgb, var(--omp-accent) 70%, var(--omp-border));
+	color: var(--omp-accent);
+}
+.omp-button:focus-visible {
+	outline: 2px solid var(--omp-accent);
+	outline-offset: 2px;
+}
+.omp-icon-button {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--omp-muted);
+	font-size: 16px;
+	line-height: 1;
+	padding: 2px 4px;
+	cursor: pointer;
+}
+.omp-icon-button:hover {
+	color: var(--omp-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.omp-diagnostics *,
+	.omp-diagnostics *::before,
+	.omp-diagnostics *::after {
+		transition: none !important;
+		animation: none !important;
+	}
+}
+
+/* Diagnóstico centralizado, no padrão do protótipo. */
+.app-diagnostics {
+	background: var(--panel);
+}
+
+.app-diagnostics .omp-diagnostics {
+	width: min(640px, 100%);
+	margin: 0 auto;
+	padding: 64px var(--space-6) var(--space-6);
+	background: transparent;
+	border: 0;
+}
+
+.omp-diagnostics-section {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--panel-raised);
+}

@@ -1,0 +1,512 @@
+/* Painel de alterações/Git (UI_B). */
+.omp-changes-panel {
+	--omp-bg: var(--bg, #111315);
+	--omp-panel: var(--panel, #191c1f);
+	--omp-text: var(--text, #e6e8ea);
+	--omp-muted: var(--muted, #a4aab2);
+	--omp-border: var(--border, #32383f);
+	--omp-accent: var(--accent, #83b4e8);
+	--omp-success: var(--success, #63bd8d);
+	--omp-warning: var(--warning, #e0b45c);
+	--omp-error: var(--error, #e37f7f);
+	--omp-radius-sm: var(--radius-sm, 4px);
+	--omp-radius-md: var(--radius-md, 8px);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	height: 100%;
+	min-height: 0;
+	box-sizing: border-box;
+	padding: 12px;
+	background: var(--omp-panel);
+	color: var(--omp-text);
+	border-left: 1px solid var(--omp-border);
+	font-family: var(--font-ui, "Segoe UI Variable", "Segoe UI", sans-serif);
+	font-size: 14px;
+	line-height: 1.5;
+	overflow-y: auto;
+}
+
+.omp-changes-panel *,
+.omp-changes-panel *::before,
+.omp-changes-panel *::after {
+	box-sizing: border-box;
+}
+
+.omp-changes-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+	flex: none;
+}
+.omp-changes-head h2 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+.omp-changes-head p {
+	margin: 2px 0 0;
+}
+.omp-changes-head-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.omp-muted {
+	color: var(--omp-muted);
+	font-size: 12px;
+}
+.omp-hint {
+	color: var(--omp-muted);
+	font-size: 12px;
+}
+.omp-icon {
+	flex: none;
+	vertical-align: -2px;
+}
+
+.omp-changes-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: 0;
+	flex: 1;
+}
+
+.omp-changes-files {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	flex: none;
+}
+
+.omp-files-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 34vh;
+	overflow-y: auto;
+}
+
+.omp-files-list > li {
+	display: flex;
+	align-items: stretch;
+	gap: 4px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+	min-width: 0;
+}
+.omp-files-list > li.is-selected {
+	border-color: var(--omp-accent);
+}
+.omp-files-list > li:hover {
+	border-color: color-mix(in srgb, var(--omp-accent) 40%, var(--omp-border));
+}
+
+.omp-file-main {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--omp-text);
+	font: inherit;
+	font-size: 14px;
+	text-align: left;
+	padding: 6px 8px;
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	cursor: pointer;
+	border-radius: var(--omp-radius-sm);
+}
+.omp-file-main:focus-visible {
+	outline: 2px solid var(--omp-accent);
+	outline-offset: -2px;
+}
+
+.omp-file-label {
+	font-weight: 600;
+	font-size: 12px;
+}
+.omp-tone-warning {
+	color: var(--omp-warning);
+}
+.omp-tone-error {
+	color: var(--omp-error);
+}
+.omp-tone-muted {
+	color: var(--omp-muted);
+}
+
+.omp-file-path {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--omp-muted);
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+}
+
+.omp-file-badges {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.omp-badge {
+	font-size: 12px;
+	border: 1px solid var(--omp-border);
+	border-radius: 999px;
+	padding: 0 6px;
+	color: var(--omp-muted);
+	line-height: 16px;
+}
+
+.omp-file-actions {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 4px;
+	padding: 4px;
+	flex: none;
+}
+
+.omp-diff-section {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 260px;
+	flex: 1;
+}
+.omp-diff-toolbar {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.omp-diff-title {
+	margin: 0;
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+.omp-diff-editor {
+	height: 320px;
+	min-height: 220px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	overflow: hidden;
+	background: var(--omp-bg);
+}
+
+.omp-segmented {
+	display: inline-flex;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	overflow: hidden;
+	align-self: flex-start;
+}
+.omp-segmented button {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--omp-muted);
+	font: inherit;
+	font-size: 12px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+.omp-segmented button[aria-pressed="true"] {
+	background: color-mix(in srgb, var(--omp-accent) 18%, var(--omp-bg));
+	color: var(--omp-text);
+}
+.omp-segmented button:focus-visible {
+	outline: 2px solid var(--omp-accent);
+	outline-offset: -2px;
+}
+
+.omp-commit {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	border-top: 1px solid var(--omp-border);
+	padding-top: 10px;
+	flex: none;
+}
+
+.omp-section-head {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.omp-section-head h3 {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.omp-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--omp-muted);
+}
+.omp-field input,
+.omp-field textarea {
+	font: inherit;
+	font-size: 14px;
+	color: var(--omp-text);
+	background: var(--omp-bg);
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	padding: 6px 8px;
+	width: 100%;
+	resize: vertical;
+}
+
+.omp-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.omp-button {
+	appearance: none;
+	font: inherit;
+	font-size: 14px;
+	color: var(--omp-text);
+	background: var(--omp-bg);
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	padding: 5px 10px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.omp-button:hover:not(:disabled) {
+	border-color: var(--omp-accent);
+}
+.omp-button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.omp-button-small {
+	padding: 3px 8px;
+	font-size: 12px;
+}
+.omp-button-primary {
+	border-color: color-mix(in srgb, var(--omp-accent) 70%, var(--omp-border));
+	color: var(--omp-accent);
+}
+.omp-button:focus-visible,
+.omp-icon-button:focus-visible {
+	outline: 2px solid var(--omp-accent);
+	outline-offset: 2px;
+}
+
+.omp-icon-button {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--omp-muted);
+	font-size: 16px;
+	line-height: 1;
+	padding: 2px 4px;
+	cursor: pointer;
+}
+.omp-icon-button:hover {
+	color: var(--omp-text);
+}
+
+.omp-message {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+	font-size: 14px;
+	margin: 0;
+}
+.omp-message > span {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.omp-message-success {
+	border-color: color-mix(in srgb, var(--omp-success) 55%, var(--omp-border));
+}
+.omp-message-success .omp-icon {
+	color: var(--omp-success);
+}
+.omp-message-warning {
+	border-color: color-mix(in srgb, var(--omp-warning) 55%, var(--omp-border));
+}
+.omp-message-warning .omp-icon {
+	color: var(--omp-warning);
+}
+.omp-message-error {
+	border-color: color-mix(in srgb, var(--omp-error) 55%, var(--omp-border));
+}
+.omp-message-error .omp-icon {
+	color: var(--omp-error);
+}
+
+.omp-changes-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 12px;
+	border: 1px dashed var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	color: var(--omp-muted);
+}
+.omp-changes-empty h3 {
+	margin: 0;
+	font-size: 14px;
+	color: var(--omp-text);
+}
+.omp-changes-empty p {
+	margin: 0;
+}
+.omp-changes-empty code {
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+	padding: 1px 4px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	color: var(--omp-text);
+}
+
+/* Modal de arquivo somente leitura */
+.omp-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.55);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	z-index: 60;
+}
+
+.omp-file-dialog {
+	width: min(900px, 100%);
+	max-height: min(80vh, 720px);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	background: var(--omp-panel);
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	padding: 16px;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.omp-file-dialog-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.omp-file-dialog-head h2 {
+	margin: 0;
+	font-size: 14px;
+	overflow-wrap: anywhere;
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+}
+.omp-file-dialog-head p {
+	margin: 2px 0 0;
+}
+
+.omp-file-content {
+	margin: 0;
+	flex: 1;
+	min-height: 120px;
+	overflow: auto;
+	padding: 10px;
+	background: var(--omp-bg);
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	font-family: var(--font-mono, "Cascadia Code", "Consolas", monospace);
+	font-size: 12px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.omp-changes-panel *,
+	.omp-changes-panel *::before,
+	.omp-changes-panel *::after {
+		transition: none !important;
+		animation: none !important;
+	}
+}
+
+/* Painel Alterações no padrão do protótipo. */
+.omp-changes-panel {
+	background: var(--panel);
+	font-size: 13px;
+}
+
+.omp-changes-head h3,
+.omp-changes-head h2 {
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--muted);
+}
+
+.omp-files-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--panel-raised);
+	overflow: hidden;
+}
+
+.omp-files-list > li {
+	border-bottom: 1px solid var(--border);
+}
+
+.omp-files-list > li:last-child {
+	border-bottom: 0;
+}
+
+.omp-file-path {
+	font-family: var(--font-mono);
+	font-size: 12px;
+}
+
+.omp-segmented {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--bg);
+	padding: 2px;
+}
+
+.omp-diff-section {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+}
+
+.omp-commit textarea {
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--panel-raised);
+	color: var(--text);
+}

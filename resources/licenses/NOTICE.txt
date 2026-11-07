@@ -1,0 +1,32 @@
+OMP Desktop — avisos de licença de terceiros
+============================================
+
+Este aplicativo é um cliente desktop independente e não oficial para oh-my-pi (OMP).
+Ele não é afiliado aos autores de oh-my-pi nem do OpenCode.
+
+Componentes distribuídos com o aplicativo:
+
+- @oh-my-pi/pi-coding-agent (MIT) — ver LICENSE-oh-my-pi-pi-coding-agent.txt
+- zod (MIT) — ver LICENSE-zod.txt
+- @lydell/node-pty (MIT) — ver LICENSE-node-pty.txt
+- React e React DOM (MIT) — ver LICENSE-react.txt e LICENSE-react-dom.txt
+- react-markdown (MIT) — ver LICENSE-react-markdown.txt
+- remark-gfm (MIT) — ver LICENSE-remark-gfm.txt
+- @xterm/xterm e @xterm/addon-fit (MIT) — ver LICENSE-xterm.txt e LICENSE-xterm-addon-fit.txt
+- monaco-editor (MIT) — ver LICENSE-monaco-editor.txt
+- Electron (MIT) — ver LICENSE-electron.txt
+- electron-builder (MIT) — ver LICENSE-electron-builder.txt
+- DOMPurify (Apache-2.0, opção da licença dupla) — ver LICENSE-DOMPurify.txt
+- Dependências transitivas do OMP — ver THIRD-PARTY-NOTICES-OMP.txt e avisos
+  preservados nos diretórios dos pacotes em resources/app/node_modules.
+
+O runtime Bun 1.4.4 é incluído no instalador como `resources/bun/bun.exe`.
+Seus avisos oficiais, incluindo JavaScriptCore/WebKit e componentes vinculados,
+estão em LICENSE-Bun.md. Código-fonte correspondente:
+https://github.com/oven-sh/bun/tree/bun-v1.4.4
+O executável OMP não é redistribuído: o aplicativo usa a instalação OMP já
+presente no computador; a biblioteca @oh-my-pi/pi-coding-agent é distribuída.
+
+Referências de arquitetura e UX do OpenCode Desktop são citadas no plano do
+projeto. Nenhum código proprietário foi copiado; trechos reutilizados de
+projetos MIT mantêm seus avisos de copyright acima.

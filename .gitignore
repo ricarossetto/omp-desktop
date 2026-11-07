@@ -1,0 +1,16 @@
+node_modules
+out
+dist
+release
+.browser-profile
+test-results
+.cache
+.tmp-trace/
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
+auth.json
+credentials.json

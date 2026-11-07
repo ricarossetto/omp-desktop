@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OMP Desktop — Bancada</title>
+<style>
+/* ============ TOKENS ============ */
+:root{
+  --font-ui:"Segoe UI Variable Text","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  --font-code:"Cascadia Code","Cascadia Mono",Consolas,monospace;
+  --fs-12:12px;--fs-14:14px;--fs-16:16px;--fs-20:20px;--lh:1.5;
+  --sp-4:4px;--sp-8:8px;--sp-12:12px;--sp-16:16px;--sp-24:24px;
+  --r-4:4px;--r-8:8px;--hit:28px;
+  --dur-fast:120ms;--dur:160ms;--dur-slow:200ms;--ease:cubic-bezier(.2,0,0,1);
+  --w-sidebar:256px;--w-panel:340px;--h-terminal:240px;--h-titlebar:36px;--h-statusbar:28px;
+}
+:root:not([data-theme="light"]),[data-theme="dark"]{
+  --bg:#0E1013;--panel:#14171B;--elevated:#1C2026;--hover:#22272E;--selected:#1F2A3A;
+  --text:#E6E9EE;--text-2:#9AA3AF;--text-3:#7D8592;
+  --border:#262B33;--border-strong:#3A414B;
+  --accent:#6CA8FF;--accent-hover:#8DBBFF;--on-accent:#0E1013;--accent-soft:rgba(108,168,255,.14);
+  --success:#4FC08D;--success-soft:rgba(79,192,141,.12);
+  --warning:#E3B341;--warning-soft:rgba(227,179,65,.10);
+  --danger:#F0716B;--danger-soft:rgba(240,113,107,.12);
+  --scrim:rgba(5,6,8,.6);--focus:#8DBBFF;
+  color-scheme:dark;
+}
+[data-theme="light"]{
+  --bg:#E4E8ED;--panel:#F1F3F6;--elevated:#FBFCFD;--hover:#E6EAEF;--selected:#D9E5F6;
+  --text:#151920;--text-2:#4C5562;--text-3:#58616E;
+  --border:#D2D8DF;--border-strong:#B4BDC8;
+  --accent:#1F5FC4;--accent-hover:#174DA3;--on-accent:#FFFFFF;--accent-soft:rgba(31,95,196,.10);
+  --success:#17784A;--success-soft:rgba(23,120,74,.10);
+  --warning:#8A5B00;--warning-soft:rgba(176,120,0,.10);
+  --danger:#B8322B;--danger-soft:rgba(184,50,43,.08);
+  --scrim:rgba(20,24,30,.35);--focus:#1F5FC4;
+  color-scheme:light;
+}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+
+/* ============ BASE ============ */
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:5px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background-color:var(--text-3)}
+::-webkit-scrollbar-corner{background:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:var(--fs-14)/var(--lh) var(--font-ui);-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-4)}
+.mono{font-family:var(--font-code)}
+.num{font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+svg{flex:none}
+kbd{font-family:var(--font-code);font-size:11px;padding:0 4px;border:1px solid var(--border-strong);border-radius:var(--r-4);color:var(--text-2);background:var(--panel)}
+
+/* ============ PREVIEW SHELL (não faz parte do app) ============ */
+.shell{max-width:1520px;margin:0 auto;padding:24px 16px 64px}
+.shell-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px}
+.shell-head h1{font-size:var(--fs-20);font-weight:600;margin:0}
+.tag{font-size:11px;font-weight:600;padding:2px 6px;border:1px solid var(--warning);color:var(--warning);border-radius:var(--r-4);letter-spacing:.02em}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px;border:1px solid var(--border);border-radius:var(--r-8);background:var(--panel)}
+.tabs button{height:var(--hit);padding:0 12px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2)}
+.tabs button[aria-selected="true"]{background:var(--elevated);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.tabs button:hover{color:var(--text)}
+.spacer{flex:1}
+.stage{overflow:auto;border-radius:var(--r-8);padding:8px 0}
+.caption{font-size:var(--fs-12);color:var(--text-2);margin:8px 0 0}
+.view{display:none}.view.on{display:block}
+section.doc{margin-top:48px;max-width:1100px}
+section.doc h2{font-size:var(--fs-20);font-weight:600;margin:0 0 8px}
+section.doc p{color:var(--text-2);margin:0 0 16px;max-width:720px}
+pre.code{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-8);padding:16px;overflow:auto;font:12px/1.6 var(--font-code);margin:0}
+
+/* ============ JANELA ============ */
+.win{position:relative;border:1px solid var(--border-strong);border-radius:var(--r-8);overflow:hidden;background:var(--panel);display:flex;flex-direction:column;flex:none}
+.titlebar{height:var(--h-titlebar);display:flex;align-items:center;background:var(--bg);border-bottom:1px solid var(--border);color:var(--text-2);font-size:var(--fs-12);flex:none;-webkit-app-region:drag}
+.titlebar button{-webkit-app-region:no-drag}
+.tb-left,.tb-right{display:flex;align-items:center;gap:2px;padding:0 8px}
+.brand{display:flex;align-items:center;gap:6px;padding-right:8px;margin-right:4px;border-right:1px solid var(--border);height:20px;color:var(--text);font-weight:600;font-size:13px}
+.brand-sub{margin-left:4px;font-weight:400;color:var(--text-2)}
+.tb-title{flex:1;min-width:0;display:flex;justify-content:center;gap:6px;font-size:13px;white-space:nowrap;overflow:hidden}
+.tb-title b{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.winctl{display:flex;align-self:stretch}
+.winctl button{width:46px;border:0;background:transparent;color:var(--text);display:grid;place-items:center}
+.winctl button:hover{background:var(--hover)}
+.winctl button.close:hover{background:#C42B1C;color:#fff}
+.ib{width:var(--hit);height:var(--hit);border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2);display:inline-grid;place-items:center;transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease)}
+.ib:hover{background:var(--hover);color:var(--text)}
+.ib[aria-pressed="true"]{color:var(--text);background:var(--elevated)}
+
+.body{flex:1;display:flex;min-height:0}
+.col{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+/* barra lateral */
+[data-theme="light"] .side,[data-theme="light"] .rail,[data-theme="light"] .snav,[data-theme="light"] .status{background:var(--bg)}
+[data-theme="light"] .u-bubble,[data-theme="light"] .tool,[data-theme="light"] .runner,[data-theme="light"] .goal,[data-theme="light"] .files,[data-theme="light"] .acct,[data-theme="light"] .box,[data-theme="light"] .start-card:not(.primary-card),[data-theme="light"] .modal{background:var(--elevated)}
+[data-theme="light"] .codeblock{background:var(--elevated)}
+[data-theme="light"] .codeblock-h{background:var(--panel)}
+[data-theme="light"] .term{background:var(--elevated)}
+.side{width:var(--w-sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex:none;font-size:13px}
+.side-scroll{flex:1;overflow:auto;padding:8px}
+.side-h{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 4px 8px;color:var(--text-2);font-size:var(--fs-12)}
+.search{display:flex;align-items:center;gap:6px;height:var(--hit);padding:0 8px;margin:0 0 8px;border:1px solid var(--border);border-radius:var(--r-4);color:var(--text-2);background:var(--bg)}
+.search input{flex:1;min-width:0;border:0;background:transparent;outline:none;font-size:var(--fs-12)}
+.search input::placeholder{color:var(--text-3)}
+.proj{margin-bottom:8px}
+.proj-h{width:100%;height:var(--hit);display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:var(--r-4);background:transparent;font-weight:600;text-align:left}
+.proj-h:hover{background:var(--hover)}
+.proj-h .count{font-weight:400;font-size:var(--fs-12);color:var(--text-2)}
+.branch{display:flex;align-items:center;gap:4px;margin:-2px 0 4px 34px;font-size:11px;color:var(--text-2)}
+.chats{margin-left:15px;padding-left:8px;border-left:1px solid var(--border);display:flex;flex-direction:column;gap:2px}
+.chat{display:flex;align-items:center;gap:6px;min-height:var(--hit);padding:2px 8px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2);text-align:left;width:100%}
+.chat:hover{background:var(--hover);color:var(--text)}
+.chat[aria-current="true"]{background:var(--selected);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+.chat .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat.unread{color:var(--text)}
+.st{display:inline-flex;align-items:center;gap:3px;font-size:11px}
+.wt{display:flex;align-items:center;gap:4px;padding:0 8px;font-size:11px;color:var(--text-2)}
+.side-sec{margin-top:12px;padding-top:8px;border-top:1px solid var(--border)}
+.side-note{padding:0 8px;font-size:var(--fs-12);color:var(--text-3)}
+.side-foot{border-top:1px solid var(--border);padding:4px 8px;display:flex;flex-direction:column}
+.row-btn{height:32px;display:flex;align-items:center;gap:8px;padding:0 8px;border:0;border-radius:var(--r-4);background:transparent;text-align:left;color:var(--text)}
+.row-btn:hover{background:var(--hover)}
+.row-btn .k{margin-left:auto}
+/* item de navegação: regra única (ícone 16px, traço 1,4, rótulo 14px, altura 32px) */
+.navlist{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+.nav-i{width:100%;height:32px;display:flex;align-items:center;gap:12px;padding:0 8px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text);font-size:var(--fs-14);text-align:left;transition:background var(--dur-fast) var(--ease)}
+.nav-i svg{color:var(--text-2);transition:color var(--dur-fast) var(--ease)}
+.nav-i:hover{background:var(--hover)}
+.nav-i:hover svg{color:var(--text)}
+.nav-i[aria-current="page"]{background:var(--selected)}
+.rail{width:44px;border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:4px;flex:none}
+
+/* conversa */
+.main{flex:1}
+.convo{flex:1;overflow:auto;padding:24px 32px 16px}
+.convo-in{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.u{align-self:flex-end;max-width:520px;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.u-bubble{background:var(--elevated);border:1px solid var(--border);border-radius:var(--r-8);padding:8px 12px}
+.u-actions{display:flex;gap:2px;opacity:.0;transition:opacity var(--dur) var(--ease)}
+.u:hover .u-actions,.u:focus-within .u-actions,.u.show .u-actions{opacity:1}
+.ghost{height:24px;display:inline-flex;align-items:center;gap:4px;padding:0 6px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2);font-size:var(--fs-12)}
+.ghost:hover{background:var(--hover);color:var(--text)}
+.a{display:flex;flex-direction:column;gap:12px}
+.a p{margin:0}
+.a h3{font-size:var(--fs-16);font-weight:600;margin:4px 0 0}
+.a ul{margin:0;padding-left:20px}
+.a code{font-family:var(--font-code);font-size:13px;padding:1px 4px;border-radius:var(--r-4);background:var(--elevated);border:1px solid var(--border)}
+.codeblock{border:1px solid var(--border);border-radius:var(--r-8);overflow:hidden;background:var(--bg)}
+.codeblock-h{display:flex;align-items:center;gap:8px;height:32px;padding:0 4px 0 12px;border-bottom:1px solid var(--border);font-size:var(--fs-12);color:var(--text-2)}
+.codeblock pre{margin:0;padding:12px;overflow:auto;font:13px/1.6 var(--font-code)}
+.tk-k{color:#C792EA}.tk-s{color:#9CCC65}.tk-f{color:var(--accent)}.tk-c{color:var(--text-3)}
+[data-theme="light"] .tk-k{color:#7A3EB1}[data-theme="light"] .tk-s{color:#3B7A1E}
+
+/* recuados: raciocínio e ferramentas */
+details.meta{font-size:var(--fs-12);color:var(--text-2)}
+details.meta>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 6px;margin-left:-6px;border-radius:var(--r-4);cursor:pointer}
+details.meta>summary::-webkit-details-marker{display:none}
+details.meta>summary:hover{background:var(--hover);color:var(--text)}
+details.meta>summary .chev{transition:transform var(--dur) var(--ease)}
+details.meta[open]>summary .chev{transform:rotate(90deg)}
+.meta-body{margin:4px 0 0 6px;padding:4px 0 4px 12px;border-left:1px solid var(--border);color:var(--text-2);font-size:13px}
+.tool{border:1px solid var(--border);border-radius:var(--r-4);font-size:var(--fs-12);background:var(--panel)}
+.tool>summary{list-style:none;display:flex;align-items:center;gap:8px;min-height:32px;padding:0 4px 0 8px;cursor:pointer;color:var(--text-2)}
+.tool>summary::-webkit-details-marker{display:none}
+.tool>summary:hover{background:var(--hover)}
+.tool .cmd{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tool .r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.diff{font:12px/20px var(--font-code);border-top:1px solid var(--border);overflow:auto}
+.diff div{display:flex;white-space:pre}
+.diff .ln{width:40px;flex:none;text-align:right;padding-right:8px;color:var(--text-3);user-select:none}
+.diff .sg{width:16px;flex:none}
+.diff .add{background:var(--success-soft)}.diff .add .sg{color:var(--success)}
+.diff .del{background:var(--danger-soft)}.diff .del .sg{color:var(--danger)}
+.tool-out{border-top:1px solid var(--border);padding:8px;font:12px/1.6 var(--font-code);color:var(--text-2);max-height:120px;overflow:auto;white-space:pre}
+.tool-foot{display:flex;gap:4px;padding:4px;border-top:1px solid var(--border)}
+.s-ok{color:var(--success)}.s-warn{color:var(--warning)}.s-err{color:var(--danger)}.s-run{color:var(--accent)}
+.err{border:1px solid var(--danger);background:var(--danger-soft);border-radius:var(--r-4);padding:8px 12px;font-size:13px;display:flex;gap:8px}
+.err b{font-weight:600}
+.approval{border:1px solid var(--warning);background:var(--warning-soft);border-radius:var(--r-4);font-size:13px}
+.approval-h{display:flex;align-items:center;gap:8px;padding:8px 12px;color:var(--warning);font-size:var(--fs-12);font-weight:600}
+.kv{display:grid;grid-template-columns:72px minmax(0,1fr);gap:2px 8px;padding:0 12px 8px;font-size:var(--fs-12)}
+.kv dt{color:var(--text-2)}.kv dd{margin:0}
+.actions{display:flex;flex-wrap:wrap;gap:8px;padding:8px 12px;border-top:1px solid var(--border)}
+
+/* botões */
+.btn{height:var(--hit);display:inline-flex;align-items:center;gap:6px;padding:0 12px;border:1px solid var(--border-strong);border-radius:var(--r-4);background:transparent;color:var(--text);font-size:13px;transition:background var(--dur-fast) var(--ease)}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.danger:hover{background:var(--danger-soft)}
+.btn.quiet{border-color:transparent;color:var(--text-2)}
+.btn.lg{height:36px;padding:0 16px;font-size:var(--fs-14)}
+.sel{height:var(--hit);display:inline-flex;align-items:center;gap:4px;padding:0 8px;border:1px solid var(--border);border-radius:var(--r-4);background:transparent;color:var(--text);font-size:var(--fs-12)}
+.sel:hover{background:var(--hover)}
+.sel .lbl{color:var(--text-2)}
+
+/* compositor */
+.composer-wrap{padding:0 32px 16px;flex:none}
+.composer-in{max-width:760px;margin:0 auto}
+.queue{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-bottom:0;border-radius:var(--r-8) var(--r-8) 0 0;background:var(--elevated);font-size:var(--fs-12)}
+.queue .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.composer{border:1px solid var(--border-strong);border-radius:var(--r-8);background:var(--elevated);display:flex;flex-direction:column;gap:8px;padding:8px;transition:border-color var(--dur) var(--ease)}
+.composer:focus-within{border-color:var(--accent)}
+.queue+.composer{border-top-left-radius:0;border-top-right-radius:0}
+.composer textarea{border:0;background:transparent;resize:none;outline:none;min-height:44px;padding:4px;font-size:var(--fs-14);line-height:var(--lh)}
+.composer textarea::placeholder{color:var(--text-3)}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 2px 0 8px;border:1px solid var(--border);border-radius:var(--r-4);background:var(--elevated);font-size:var(--fs-12)}
+.chip button{width:20px;height:20px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2);display:grid;place-items:center}
+.chip button:hover{background:var(--hover);color:var(--text)}
+.ctools{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.menu{position:absolute;left:0;bottom:36px;width:260px;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--r-8);padding:4px;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.24)}
+.menu button{width:100%;height:32px;display:flex;align-items:center;gap:8px;padding:0 8px;border:0;border-radius:var(--r-4);background:transparent;text-align:left;font-size:13px}
+.menu button:hover{background:var(--hover)}
+.menu .k{margin-left:auto;color:var(--text-2);font-size:var(--fs-12)}
+.mpick{width:280px}
+.mp-h{font-size:var(--fs-12);color:var(--text-2);padding:4px 8px}
+.mpick .ck{width:14px;display:inline-grid;place-items:center;color:var(--accent)}
+.mpick button[aria-checked="true"]{color:var(--text);font-weight:600}
+.seg{display:flex;gap:2px;margin:0 4px 4px;padding:2px;border:1px solid var(--border);border-radius:var(--r-4);background:var(--bg)}
+.seg button{flex:1;height:28px;justify-content:center;padding:0;font-size:var(--fs-12);color:var(--text-2);font-weight:400!important}
+.seg button[aria-checked="true"]{background:var(--elevated);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.runline{display:flex;align-items:center;gap:8px;padding:0 4px 8px;font-size:var(--fs-12)}
+.stopbtn{background:var(--danger);color:#fff;border:1px solid var(--danger)}
+.stopbtn:hover{background:var(--danger);color:#fff;filter:brightness(1.1)}
+[data-theme="dark"] .stopbtn{color:#14171B}
+.paused{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:8px;border:1px solid var(--border-strong);border-radius:var(--r-8);background:var(--elevated);font-size:13px}
+.working-note{font-size:var(--fs-12);color:var(--text-2);display:flex;align-items:center;gap:6px}
+
+/* painel direito */
+.panel{width:var(--w-panel);border-left:1px solid var(--border);display:flex;flex-direction:column;flex:none;background:var(--panel)}
+.ptabs{display:flex;border-bottom:1px solid var(--border);padding:0 8px;gap:4px;flex:none}
+.ptabs button{height:36px;padding:0 8px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--text-2);font-size:13px;display:flex;align-items:center;gap:6px}
+.ptabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent)}
+.badge{font-size:11px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--elevated);border:1px solid var(--border);color:var(--text-2);display:inline-grid;place-items:center}
+.pbody{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;font-size:13px}
+.ph{font-size:var(--fs-12);color:var(--text-2);display:flex;align-items:center;justify-content:space-between}
+.goal{border:1px solid var(--border);border-radius:var(--r-4);padding:8px 12px}
+.goal p{margin:2px 0 0}
+.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.tasks li{display:flex;align-items:flex-start;gap:8px;padding:4px 0}
+.tasks li.done span{color:var(--text-2);text-decoration:line-through}
+.runner{border:1px solid var(--border);border-radius:var(--r-4)}
+.runner-h{display:flex;align-items:center;gap:8px;padding:8px 8px 4px 12px}
+.runner-h b{font-weight:600}
+.runner dl{display:grid;grid-template-columns:84px minmax(0,1fr);gap:2px 8px;margin:0;padding:0 12px 8px;font-size:var(--fs-12)}
+.runner dt{color:var(--text-2)}.runner dd{margin:0}
+.runner .last{border-top:1px solid var(--border);padding:6px 12px;font-size:var(--fs-12);color:var(--text-2);font-family:var(--font-code);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.files{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:var(--r-4)}
+.files li{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 8px;border-bottom:1px solid var(--border);font-size:var(--fs-12)}
+.files li:last-child{border-bottom:0}
+.files li[aria-current="true"]{background:var(--selected)}
+.files .p{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-code)}
+.fs{width:16px;text-align:center;font-family:var(--font-code);font-weight:600}
+.commit{display:flex;flex-direction:column;gap:8px}
+.commit textarea{min-height:56px;border:1px solid var(--border);border-radius:var(--r-4);background:var(--bg);padding:6px 8px;resize:vertical;font-size:13px}
+
+/* ultrawide (janela >= 2560px): dois painéis lado a lado, diff largo, coluna de leitura um pouco maior */
+.uw .panel{width:400px}
+.uw .panel.wide{width:760px}
+.uw .convo-in,.uw .composer-in{max-width:880px}
+.uw .diff{font-size:13px;line-height:22px}
+/* terminal e status */
+.term{height:var(--h-terminal);border-top:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;flex:none}
+.term-h{height:32px;display:flex;align-items:center;gap:8px;padding:0 4px 0 12px;border-bottom:1px solid var(--border);font-size:var(--fs-12);color:var(--text-2)}
+.term pre{flex:1;margin:0;padding:8px 12px;overflow:auto;font:12px/1.6 var(--font-code);color:var(--text)}
+.status{height:var(--h-statusbar);display:flex;align-items:center;gap:16px;padding:0 12px;border-top:1px solid var(--border);font-size:var(--fs-12);color:var(--text-2);background:var(--bg);flex:none;position:relative}
+.status .v{color:var(--text)}
+.sb-btn{height:22px;display:inline-flex;align-items:center;gap:6px;padding:0 6px;margin:0 -6px;border:0;border-radius:var(--r-4);background:transparent;color:inherit;font-size:var(--fs-12)}
+.sb-btn:hover,.sb-btn[aria-expanded="true"]{background:var(--hover);color:var(--text)}
+.meter{width:40px;height:4px;border-radius:2px;background:var(--border);overflow:hidden;display:flex}
+.meter i{background:var(--accent)}
+.pop{position:absolute;bottom:32px;width:300px;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--r-8);padding:12px;z-index:6;display:flex;flex-direction:column;gap:8px;color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.24)}
+.stack{display:flex;height:8px;border-radius:2px;overflow:hidden;background:var(--border)}
+.legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;color:var(--text-2);font-size:var(--fs-12)}
+.sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+
+/* anel de carregamento */
+.ring{width:12px;height:12px}
+.ring circle{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;transform-origin:center;animation:ringSpin 1s cubic-bezier(.5,.15,.5,.85) infinite,ringDash 2s ease-in-out infinite}
+@keyframes ringSpin{to{transform:rotate(360deg)}}
+@keyframes ringDash{0%,100%{stroke-dasharray:4 34}50%{stroke-dasharray:20 18}}
+@media (prefers-reduced-motion: reduce){.ring circle{stroke-dasharray:20 18}}
+
+/* gaveta e diálogo */
+.scrim{position:absolute;inset:var(--h-titlebar) 0 0 0;background:var(--scrim);z-index:8}
+.drawer{position:absolute;top:var(--h-titlebar);right:0;bottom:0;z-index:9;box-shadow:-8px 0 24px rgba(0,0,0,.24);animation:slideIn var(--dur-slow) var(--ease)}
+@keyframes slideIn{from{transform:translateX(24px);opacity:0}}
+.modal-scrim{position:absolute;inset:0;background:var(--scrim);display:grid;place-items:center;z-index:20}
+.modal{width:560px;max-height:calc(100% - 64px);overflow:auto;background:var(--panel);border:1px solid var(--border-strong);border-radius:var(--r-8);box-shadow:0 16px 48px rgba(0,0,0,.32);display:flex;flex-direction:column}
+.modal-h{padding:16px 16px 12px;border-bottom:1px solid var(--border)}
+.modal-h h2{margin:0;font-size:var(--fs-16);font-weight:600;display:flex;align-items:center;gap:8px}
+.modal-h p{margin:4px 0 0;color:var(--text-2);font-size:13px}
+.modal-b{padding:16px;display:flex;flex-direction:column;gap:16px}
+.modal-f{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--border)}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+legend{font-weight:600;font-size:13px;margin-bottom:4px;padding:0}
+.opt{display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--r-4);cursor:pointer;font-size:13px}
+.opt:hover{background:var(--hover)}
+.opt input{margin:3px 0 0;accent-color:var(--accent)}
+.opt small{display:block;color:var(--text-2);font-size:var(--fs-12)}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.field label{font-weight:600}
+.field textarea,.field input,.field select{border:1px solid var(--border-strong);border-radius:var(--r-4);background:var(--bg);padding:6px 8px;font-size:13px}
+.field textarea{min-height:64px;resize:vertical}
+.hint{font-size:var(--fs-12);color:var(--text-2)}
+
+/* configurações */
+.settings{flex:1;display:flex;min-height:0}
+.snav{width:220px;border-right:1px solid var(--border);padding:12px 8px;display:flex;flex-direction:column;gap:2px;flex:none}
+.snav button{height:32px;display:flex;align-items:center;gap:8px;padding:0 8px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2);text-align:left;font-size:13px}
+.snav button[aria-current="true"]{background:var(--selected);color:var(--text)}
+.snav button:hover{color:var(--text)}
+.scontent{flex:1;overflow:auto;padding:24px 32px}
+.scontent h2{font-size:var(--fs-20);font-weight:600;margin:0 0 4px}
+.scontent h3{font-size:var(--fs-16);font-weight:600;margin:24px 0 8px}
+.scontent>p{color:var(--text-2);margin:0 0 16px}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th{text-align:left;font-weight:400;color:var(--text-2);font-size:var(--fs-12);padding:6px 8px;border-bottom:1px solid var(--border)}
+table.t td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle}
+table.t tr:hover td{background:var(--hover)}
+.acct{border:1px solid var(--border);border-radius:var(--r-8);padding:12px 16px;display:flex;flex-direction:column;gap:12px;margin-bottom:12px}
+.acct-h{display:flex;align-items:center;gap:8px}
+.usage{display:grid;grid-template-columns:140px minmax(0,1fr) 120px;gap:8px 12px;align-items:center;font-size:13px}
+.bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.unav{display:inline-flex;align-items:center;gap:4px;color:var(--text-2)}
+
+/* início e diagnóstico */
+.center{flex:1;display:grid;place-items:center;padding:32px;overflow:auto}
+.hero{width:min(560px,100%);display:flex;flex-direction:column;gap:16px}
+.hero h2{font-size:var(--fs-20);font-weight:600;margin:0}
+.hero p{margin:0;color:var(--text-2)}
+.box{border:1px solid var(--border);border-radius:var(--r-8);padding:12px 16px}
+.checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.checks li{display:flex;gap:8px;align-items:flex-start}
+.shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px;font-size:13px;color:var(--text-2)}
+.shortcuts span{display:flex;justify-content:space-between;gap:8px}
+
+/* primeira execução */
+.ob{flex:1;display:flex;min-height:0}
+.ob-nav{width:240px;border-right:1px solid var(--border);padding:32px 16px 24px;display:flex;flex-direction:column;flex:none;background:var(--bg)}
+.ob-nav ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;position:relative}
+.ob-nav button{width:100%;height:36px;display:flex;align-items:center;gap:10px;padding:0 8px;border:0;border-radius:var(--r-4);background:transparent;color:var(--text-2);text-align:left}
+.ob-nav button:hover{background:var(--hover)}
+.ob-nav button[aria-current="step"]{color:var(--text);font-weight:600;background:var(--elevated)}
+.ob-nav button.done{color:var(--text)}
+.ob-dot{width:20px;height:20px;border-radius:10px;border:1px solid var(--border-strong);display:inline-grid;place-items:center;font-size:11px;font-weight:600;flex:none}
+.ob-nav button[aria-current="step"] .ob-dot{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.ob-nav button.done .ob-dot{border-color:var(--success);color:var(--success)}
+.ob-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.ob-body{flex:1;overflow:auto;padding:64px 48px 24px;width:min(640px,100%);margin:0 auto;display:flex;flex-direction:column;gap:16px;animation:obIn var(--dur-slow) var(--ease)}
+@keyframes obIn{from{opacity:0;transform:translateY(4px)}}
+.ob-body h2{margin:0;font-size:28px;font-weight:600;letter-spacing:-.01em}
+.ob-lead{margin:-8px 0 8px;color:var(--text-2);font-size:var(--fs-16)}
+.ob-art{margin-bottom:8px}
+.ob-points{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--r-8)}
+.ob-points li{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.ob-points li:last-child{border-bottom:0}
+.ob-points b{display:block;font-weight:600}
+.ob-points span:not(.ob-n):not(.mono){color:var(--text-2);font-size:13px}
+.ob-n{width:24px;height:24px;border-radius:var(--r-4);background:var(--elevated);border:1px solid var(--border);display:grid;place-items:center;font-size:12px;font-weight:600;flex:none;font-family:var(--font-code)}
+.ob-checks{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:var(--r-8)}
+.ob-checks li{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.ob-checks li:last-child{border-bottom:0}
+.ob-checks div{flex:1;min-width:0;display:flex;flex-direction:column}
+.ob-checks b{font-weight:600}
+.ob-checks div span{color:var(--text-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob-tag{font-size:12px;color:var(--success)}
+.ob-themes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.ob-theme{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--border);border-radius:var(--r-8);background:transparent;text-align:left;font-size:13px}
+.ob-theme[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ob-prev{height:72px;border-radius:var(--r-4);border:1px solid var(--border);display:flex;gap:6px;padding:8px}
+.ob-prev i{flex:1;border-radius:2px}
+.ob-prev i:first-child{flex:0 0 30%}
+.ob-foot{display:flex;align-items:center;gap:8px;padding:16px 48px;border-top:1px solid var(--border)}
+/* início */
+.start{width:min(760px,100%);display:flex;flex-direction:column;gap:24px}
+.start-hero{display:flex;align-items:center;gap:16px}
+.start-hero h2{margin:0;font-size:28px;font-weight:600;letter-spacing:-.01em}
+.start-hero p{margin:2px 0 0;color:var(--text-2);font-size:var(--fs-16)}
+.start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.start-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:148px;padding:16px;border:1px solid var(--border);border-radius:var(--r-8);background:var(--panel);text-align:left;transition:border-color var(--dur) var(--ease),background var(--dur) var(--ease),transform var(--dur) var(--ease)}
+.start-card:hover{border-color:var(--border-strong);background:var(--elevated);transform:translateY(-1px)}
+.start-card .sc-ic{width:36px;height:36px;border-radius:var(--r-8);display:grid;place-items:center;background:var(--elevated);color:var(--text);margin-bottom:6px}
+.start-card .sc-t{font-weight:600;font-size:var(--fs-16)}
+.start-card .sc-d{color:var(--text-2);font-size:13px}
+.start-card kbd{position:absolute;top:16px;right:16px}
+.primary-card{border-color:var(--accent);background:var(--accent-soft)}
+.primary-card:hover{border-color:var(--accent);background:var(--accent-soft)}
+.primary-card .sc-ic{background:var(--accent);color:var(--on-accent)}
+.drop{display:flex;align-items:center;justify-content:center;gap:8px;height:56px;border:1px dashed var(--border-strong);border-radius:var(--r-8);color:var(--text-2);font-size:13px}
+.start-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+/* tokens */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:16px}
+.swatch{border:1px solid var(--border);border-radius:var(--r-4);overflow:hidden;font-size:var(--fs-12)}
+.swatch i{display:block;height:32px}
+.swatch div{padding:6px 8px;display:flex;flex-direction:column}
+.swatch code{font-family:var(--font-code);color:var(--text-2)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="shell-head">
+    <h1>OMP Desktop · direção Bancada</h1>
+    <span class="tag" title="Dados de exemplo">PREVIEW</span>
+    <div class="spacer"></div>
+    <div class="tabs" role="tablist" aria-label="Tema">
+      <button role="tab" data-theme-set="dark" aria-selected="true">Escuro</button>
+      <button role="tab" data-theme-set="light" aria-selected="false">Claro</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Telas" id="viewTabs" style="margin-bottom:12px">
+    <button role="tab" data-view="v-main" aria-selected="true">Janela 1440 × 920</button>
+    <button role="tab" data-view="v-small" aria-selected="false">Janela 1000 × 700 (gaveta)</button>
+    <button role="tab" data-view="v-uw" aria-selected="false">Ultrawide 3440 × 1440</button>
+    <button role="tab" data-view="v-approval" aria-selected="false">Diálogo de aprovação</button>
+    <button role="tab" data-view="v-settings" aria-selected="false">Configurações</button>
+    <button role="tab" data-view="v-onb" aria-selected="false">Primeira execução</button>
+    <button role="tab" data-view="v-start" aria-selected="false">Início vazio</button>
+    <button role="tab" data-view="v-diag" aria-selected="false">OMP não encontrado</button>
+  </nav>
+
+  <div class="view on" id="v-main">
+    <div class="tabs" role="radiogroup" aria-label="Estado do compositor" style="margin-bottom:8px;display:inline-flex">
+      <button role="radio" data-composer="working" aria-selected="true">Compositor: agente trabalhando</button>
+      <button role="radio" data-composer="attach" aria-selected="false">Com anexos</button>
+      <button role="radio" data-composer="empty" aria-selected="false">Vazio</button>
+    </div>
+    <div class="stage"><div id="mainWin"></div></div>
+    <p class="caption">Clique nas abas Agentes e Alterações, no botão +, no contexto do rodapé, no terminal e no ícone de barra lateral. Passe o mouse na mensagem do usuário para ver "Voltar até aqui".</p>
+  </div>
+  <div class="view" id="v-uw"><div class="stage"><div id="uwWin"></div></div><p class="caption">Prévia reduzida. Teste em ultrawide (21:9) com os dois painéis lado a lado.</p></div>
+  <div class="view" id="v-small"><div class="stage"><div id="smallWin"></div></div><p class="caption">Abaixo de 1000px o painel direito vira gaveta sobre a conversa. Esc ou clique fora fecha.</p></div>
+  <div class="view" id="v-approval"><div class="stage"><div id="apprWin"></div></div></div>
+  <div class="view" id="v-settings"><div class="stage"><div id="setWin"></div></div></div>
+  <div class="view" id="v-onb"><div class="stage"><div id="onbWin"></div></div><p class="caption">Use Continuar, Voltar ou clique nas etapas à esquerda. Aparece só na primeira vez que o app abre; dá para rever em Configurações › Geral.</p></div>
+  <div class="view" id="v-start"><div class="stage"><div id="startWin"></div></div></div>
+  <div class="view" id="v-diag"><div class="stage"><div id="diagWin"></div></div></div>
+
+  <section class="doc" aria-labelledby="tok-h">
+    <h2 id="tok-h">Tokens</h2>
+    <p>Copie o bloco abaixo para o CSS do projeto. O tema escuro é o padrão; o claro entra com <code class="mono">[data-theme="light"]</code> no elemento raiz. Todas as cores de texto passam 4,5:1 sobre painel e fundo nos dois temas; bordas fortes e acento passam 3:1.</p>
+    <div class="swatches" id="swatches"></div>
+    <pre class="code" id="tokenCode"></pre>
+  </section>
+</div>
+
+<script>
+(function(){
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+
+/* ---------- ícones ---------- */
+const I={
+ logo:'<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.88 10.61A8 8 0 1 1 13.39 4.12" fill="none" stroke="var(--text)" stroke-width="3.2" stroke-linecap="butt"/><rect x="16.2" y="2.2" width="5" height="7.2" rx=".6" fill="var(--accent)"/></svg>',
+ side:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 3v10" stroke="currentColor" stroke-width="1.3"/></svg>',
+ panel:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M10 3v10" stroke="currentColor" stroke-width="1.3"/></svg>',
+ term:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 10h12" stroke="currentColor" stroke-width="1.3"/></svg>',
+ back:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 3L5 7l4 4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+ fwd:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+ search:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.3"/></svg>',
+ plus:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5"/></svg>',
+ x:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.3"/></svg>',
+ chev:'<svg class="chev" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+ down:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+ folder:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1.5 3.5h4l1 1.5h6v6.5h-11z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+ gear:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.9 1.8h2.2l.3 1.6 1.2.5 1.3-.9 1.6 1.6-.9 1.3.5 1.2 1.6.3v2.2l-1.6.3-.5 1.2.9 1.3-1.6 1.6-1.3-.9-1.2.5-.3 1.6H6.9l-.3-1.6-1.2-.5-1.3.9-1.6-1.6.9-1.3-.5-1.2-1.6-.3V6.9l1.6-.3.5-1.2-.9-1.3 1.6-1.6 1.3.9 1.2-.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
+ sun:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+ moon:'<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+ ok:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.5l2.5 2.5L10 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+ err:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 4l4 4M8 4L4 8" stroke="currentColor" stroke-width="1.3"/></svg>',
+ warn:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1l5 10H1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 5v2.5M6 9v.1" stroke="currentColor" stroke-width="1.3"/></svg>',
+ dash:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 2"/></svg>',
+ ring:'<svg class="ring" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5"/></svg>',
+ clip:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9.5 4.5l-4 4a1.4 1.4 0 0 0 2 2l4.5-4.5a2.8 2.8 0 0 0-4-4L3.5 6.5a4.2 4.2 0 0 0 6 6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
+ shield:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1l4 1.5v3c0 2.5-1.8 4.3-4 5-2.2-.7-4-2.5-4-5v-3z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+ branch:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="2.5" cy="2" r="1.3" fill="none" stroke="currentColor"/><circle cx="2.5" cy="8" r="1.3" fill="none" stroke="currentColor"/><circle cx="7.5" cy="3.5" r="1.3" fill="none" stroke="currentColor"/><path d="M2.5 3.3v3.4M7.5 4.8c0 2-5 1-5 2" fill="none" stroke="currentColor"/></svg>',
+ undo:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4h5a2.5 2.5 0 0 1 0 5H5M3 4l2-2M3 4l2 2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+ copy:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 4V2.5A1 1 0 0 0 7 1.5H2.5a1 1 0 0 0-1 1V7a1 1 0 0 0 1 1H4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+ stop:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" rx="1" fill="currentColor"/></svg>',
+ send:'<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 12V2M3 6l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ info:'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 5.5v3M6 3.5v.1" stroke="currentColor" stroke-width="1.3"/></svg>',
+ min:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"/></svg>',
+ max:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></svg>',
+ close:'<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"/></svg>'
+};
+
+/* ---------- peças ---------- */
+function titlebar(o){o=o||{};return `<div class="titlebar">
+ <div class="tb-left"><span class="brand">${I.logo}<span>OMP<span class="brand-sub">desktop</span></span></span>
+  <button class="ib" data-act="side" aria-label="Alternar barra lateral" title="Alternar barra lateral (Ctrl+B)">${I.side}</button>
+  <button class="ib" aria-label="Voltar" title="Voltar (Alt+←)">${I.back}</button>
+  <button class="ib" aria-label="Avançar" title="Avançar (Alt+→)">${I.fwd}</button></div>
+ <div class="tb-title">${o.title||'<span>omp-desktop</span><span style="color:var(--border-strong)">/</span><b>Rolagem virtual</b>'}</div>
+ <div class="tb-right">
+  <button class="ib" aria-label="Paleta de comandos" title="Paleta de comandos (Ctrl+K)">${I.search}</button>
+  <button class="ib" data-act="theme" aria-label="Alternar tema claro e escuro" title="Alternar tema claro e escuro">${document.documentElement.dataset.theme==='light'?I.moon:I.sun}</button>
+  <button class="ib" data-act="term" aria-label="Alternar terminal" title="Terminal (Ctrl+\`)" aria-pressed="${o.term?'true':'false'}">${I.term}</button>
+  <button class="ib" data-act="panel" aria-label="Alternar painel Agentes e Alterações" title="Agentes e Alterações" aria-pressed="${o.panel?'true':'false'}">${I.panel}</button></div>
+ <div class="winctl"><button aria-label="Minimizar">${I.min}</button><button aria-label="Maximizar">${I.max}</button><button class="close" aria-label="Fechar">${I.close}</button></div>
+</div>`}
+
+function sidebar(){return `<nav class="side" aria-label="Projetos e conversas">
+ <div class="side-scroll">
+  <div class="navlist">
+   <button class="nav-i" title="Nova sessão (Ctrl+N)"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Nova sessão</span></button>
+   <button class="nav-i" title="Buscar conversas (Ctrl+Shift+F)"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.2 10.2L13 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Buscar</span></button>
+   <button class="nav-i" title="Skills, comandos e servidores MCP"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.75" y="2.75" width="4.5" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="8.75" y="2.75" width="4.5" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2.75" y="8.75" width="4.5" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M11 9v4M9 11h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Skills e MCP</span></button>
+  </div>
+  <div class="side-h"><span>Projetos</span><button class="ib" aria-label="Abrir projeto" title="Abrir projeto (Ctrl+Shift+P)">${I.plus}</button></div>
+  <div class="proj">
+   <button class="proj-h" aria-expanded="true">${I.down}<span style="color:var(--text-2)">${I.folder}</span><span style="flex:1">omp-desktop</span><span class="count num">3</span></button>
+   <div class="branch mono" title="Branch atual">${I.branch}master · 2 alterados</div>
+   <div class="chats">
+    <button class="chat" aria-current="true"><span class="t">Rolagem virtual</span><span class="st s-run" title="Trabalhando">${I.ring}<span class="sr">Trabalhando</span></span></button>
+    <button class="chat"><span class="t">Testes de aceitação</span><span class="st s-warn">${I.warn}Aprovar</span></button>
+    <button class="chat unread"><span class="t">Ícones da bandeja</span><span class="st s-ok"><span style="width:6px;height:6px;border-radius:3px;background:currentColor"></span>Nova</span></button>
+    <div class="wt mono">${I.branch}worktree: omp/bandeja</div>
+   </div>
+  </div>
+  <div class="proj">
+   <button class="proj-h" aria-expanded="false">${I.chev}<span style="color:var(--text-2)">${I.folder}</span><span style="flex:1">api-calculos</span><span class="count num">5</span></button>
+  </div>
+  <div class="side-sec">
+   <div class="side-h"><span>Conversas sem projeto</span><button class="ib" aria-label="Nova conversa sem projeto" title="Nova conversa sem projeto">${I.plus}</button></div>
+   <button class="chat"><span class="t">Dúvida sobre regex</span></button>
+   <button class="chat"><span class="t">Rascunho de commit</span></button>
+   <div class="side-note">Sem pasta: o agente não lê nem altera arquivos.</div>
+  </div>
+ </div>
+ <div class="side-foot">
+  <button class="nav-i" data-goto="v-settings" title="Configurações (Ctrl+,)">${I.gear}<span>Configurações</span></button>
+ </div>
+</nav>`}
+
+function rail(){return `<nav class="rail" aria-label="Barra lateral recolhida">
+ <button class="ib" data-act="side" aria-label="Expandir barra lateral" title="Expandir barra lateral (Ctrl+B)">${I.side}</button>
+ <button class="ib" aria-label="Nova sessão" title="Nova sessão (Ctrl+N)">${I.plus}</button>
+ <button class="ib" aria-label="Buscar conversas" title="Buscar conversas">${I.search}</button>
+ <span style="flex:1"></span>
+ <button class="ib" data-goto="v-settings" aria-label="Configurações" title="Configurações">${I.gear}</button>
+</nav>`}
+
+function conversation(){return `<div class="convo" tabindex="0" aria-label="Conversa"><div class="convo-in">
+ <div class="u show">
+  <div class="u-bubble">Adicione rolagem virtual na lista de mensagens. Sessões longas estão travando a janela.</div>
+  <div class="u-actions"><button class="ghost" title="Desfaz as edições feitas depois desta mensagem">${I.undo}Voltar até aqui</button><button class="ghost">${I.copy}Copiar</button></div>
+ </div>
+ <div class="a">
+  <details class="meta"><summary>${I.chev}Raciocínio · 12 s</summary><div class="meta-body">A lista renderiza todas as mensagens. Com 2.000 itens o layout leva mais de 300 ms. Uma janela de itens visíveis com alturas em cache resolve sem mudar a API do componente.</div></details>
+  <p>A lista hoje desenha todas as mensagens a cada atualização. Vou trocar por uma <strong>janela de itens visíveis</strong>:</p>
+  <ul><li>a altura de cada mensagem fica em cache depois da primeira medição;</li><li>só os itens na tela, mais uma margem de 8, são montados;</li><li>a rolagem até o fim continua automática enquanto o agente responde.</li></ul>
+  <div class="codeblock"><div class="codeblock-h"><span class="mono">src/hooks/useVirtualWindow.ts</span><span class="spacer"></span><button class="ghost">${I.copy}Copiar</button></div>
+<pre><span class="tk-k">export function</span> <span class="tk-f">useVirtualWindow</span>(items, cache) {
+  <span class="tk-k">const</span> [top, setTop] = useState(<span class="tk-s">0</span>);
+  <span class="tk-c">// soma alturas conhecidas para achar o primeiro item visível</span>
+  <span class="tk-k">const</span> start = cache.<span class="tk-f">indexAt</span>(top);
+  <span class="tk-k">return</span> { visible: items.<span class="tk-f">slice</span>(start, start + <span class="tk-s">40</span>), setTop };
+}</pre></div>
+  <details class="tool" open><summary><span class="st s-ok">${I.ok}Concluído</span><span class="cmd mono">edit src/components/MessageList.tsx</span><span class="r"><span class="num"><span class="s-ok">+42</span> <span class="s-err">−9</span></span>${I.chev}</span></summary>
+   <div class="diff">
+    <div><span class="ln">41</span><span class="sg"> </span>  const items = useMessages(sessionId);</div>
+    <div class="del"><span class="ln">42</span><span class="sg">−</span>  return items.map(renderMessage);</div>
+    <div class="add"><span class="ln">42</span><span class="sg">+</span>  const win = useVirtualWindow(items, heightCache);</div>
+    <div class="add"><span class="ln">43</span><span class="sg">+</span>  return win.visible.map(renderMessage);</div>
+   </div>
+   <div class="tool-foot"><button class="ghost" data-tab="changes">Abrir em Alterações</button><button class="ghost">${I.undo}Desfazer este arquivo</button></div>
+  </details>
+  <details class="tool" open><summary><span class="st s-run">${I.ring}Rodando</span><span class="cmd mono">npm test -- virtual-scroll</span><span class="r"><span class="num">14/20 · 8 s</span>${I.chev}</span></summary>
+   <div class="tool-out">PASS  tests/acceptance/virtual-scroll.spec.ts
+  ✓ mantém a posição ao receber mensagem (41 ms)
+  ✓ mede altura só uma vez (12 ms)
+  ● rolagem até o fim durante streaming…</div>
+  </details>
+  <div class="err" role="alert"><span class="s-err" style="padding-top:2px">${I.err}</span><div><b>Falha no lint.</b> <span class="mono">eslint</span> saiu com código 1 em 2 arquivos. O agente vai corrigir e rodar de novo. <button class="ghost" style="margin-left:-6px">Ver saída completa</button></div></div>
+  <div class="approval" role="group" aria-label="Pedido de aprovação">
+   <div class="approval-h">${I.warn}Aguardando sua aprovação</div>
+   <dl class="kv"><dt>Comando</dt><dd class="mono">npm run lint -- --fix</dd><dt>Alvo</dt><dd class="mono">C:\\dev\\app</dd><dt>Escopo</dt><dd>Altera arquivos do projeto</dd></dl>
+   <div class="actions"><button class="btn primary">Aprovar</button><button class="btn">Sempre neste projeto</button><button class="btn">Negar</button><span class="spacer"></span><button class="btn quiet" data-goto="v-approval">Ver detalhes</button></div>
+  </div>
+ </div>
+</div></div>`}
+
+function composer(state){
+ const working=state==='working', attach=state==='attach'||working;
+ const chips=attach?`<div class="chips">
+  <span class="chip"><span class="mono">spec-rolagem.pdf</span><button aria-label="Remover spec-rolagem.pdf">${I.x}</button></span>
+  <span class="chip"><span class="mono">@src/components/MessageList.tsx</span><button aria-label="Remover MessageList.tsx">${I.x}</button></span>
+  <span class="chip">Skill: code-review<button aria-label="Remover skill code-review">${I.x}</button></span></div>`:'';
+ const queue=working?`<div class="queue"><span style="color:var(--text-2)" title="Será enviada quando o agente terminar">Na fila</span><span class="t">Depois, rode os testes de aceitação também.</span>
+  <button class="btn" style="height:24px;font-size:12px" title="Interrompe o agente e envia esta mensagem agora">Enviar agora</button>
+  <button class="btn quiet" style="height:24px;font-size:12px" title="Volta a mensagem para o compositor">Editar</button>
+  <button class="ib" style="width:24px;height:24px" aria-label="Remover da fila">${I.x}</button></div>`:'';
+ const right=working?`<button class="ib" style="border:1px solid var(--border-strong)" aria-label="Pausar depois do passo atual" title="Pausar depois do passo atual (Ctrl+Shift+Espaço)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2" width="2.5" height="8" rx=".5" fill="currentColor"/><rect x="7" y="2" width="2.5" height="8" rx=".5" fill="currentColor"/></svg></button>
+  <button class="ib stopbtn" aria-label="Parar" title="Parar (Esc)">${I.stop}</button>`
+  :`<button class="btn primary" aria-label="Enviar" title="Enviar (Enter)" ${state==='empty'?'disabled style="opacity:.45;cursor:default"':''}>${I.send}Enviar</button>`;
+ const runline=working?`<div class="runline"><span class="working-note s-run">${I.ring}<span>Trabalhando · 1 min 12 s</span></span><span style="color:var(--text-2)">rodando npm test</span></div>`:'';
+ return `<div class="composer-wrap"><div class="composer-in">${runline}${queue}
+ <div class="composer">${chips}
+  <label class="sr" for="msg">Mensagem para o agente</label>
+  <textarea id="msg" rows="2" placeholder="${working?'Escreva uma orientação. Ela entra na fila.':'Peça algo ao agente. Use @ para arquivos e / para comandos e skills'}">${attach&&!working?'Revise a rolagem virtual usando a spec anexada.':''}</textarea>
+  <div class="ctools">
+   <div style="position:relative"><button class="ib" data-act="menu" aria-haspopup="menu" aria-expanded="false" aria-label="Adicionar ao contexto" title="Adicionar ao contexto" style="border:1px solid var(--border)">${I.plus}</button>
+    <div class="menu" role="menu" hidden>
+     <button role="menuitem">${I.clip}Anexar arquivo ou imagem</button>
+     <button role="menuitem"><span class="mono" style="width:14px;text-align:center">@</span>Citar arquivo do projeto<span class="k mono">@</span></button>
+     <button role="menuitem"><span class="mono" style="width:14px;text-align:center">/</span>Comandos e skills<span class="k mono">/</span></button>
+     <button role="menuitem"><span class="mono" style="width:14px;text-align:center">⌁</span>Servidores MCP<span class="k">3 ativos</span></button>
+    </div></div>
+   <button class="sel" title="Modo do agente (Tab)"><span class="lbl">Modo</span>Executar${I.down}</button>
+   <div style="position:relative"><button class="sel" data-act="model" aria-haspopup="dialog" aria-expanded="false" title="Modelo e raciocínio (Ctrl+M)">Opus 5.5 <span class="lbl">·</span> Alto${I.down}</button>
+    <div class="menu mpick" role="dialog" aria-label="Modelo e raciocínio" hidden>
+     <div class="mp-h">Modelo</div>
+     <button role="menuitemradio" aria-checked="true"><span class="ck">${I.ok}</span>Opus 5.5<span class="k">Padrão</span></button>
+     <button role="menuitemradio" aria-checked="false"><span class="ck"></span>Sonnet 5.5</button>
+     <button role="menuitemradio" aria-checked="false"><span class="ck"></span>Haiku 5.5</button>
+     <button role="menuitemradio" aria-checked="false"><span class="ck"></span>modelo-local<span class="k">Ollama</span></button>
+     <div class="mp-h" style="border-top:1px solid var(--border);margin-top:4px;padding-top:8px">Raciocínio</div>
+     <div class="seg" role="radiogroup" aria-label="Nível de raciocínio">
+      <button role="radio" aria-checked="false">Baixo</button><button role="radio" aria-checked="false">Médio</button><button role="radio" aria-checked="true">Alto</button><button role="radio" aria-checked="false">Máximo</button></div>
+     <div class="hint" style="padding:4px 8px 4px">Mais raciocínio responde melhor e demora mais.</div>
+    </div></div>
+   <span class="spacer"></span><button class="sel" title="Permissões (Shift+Tab)">${I.shield}Pedir sempre${I.down}</button>${right}
+  </div>
+ </div></div></div>`}
+
+function agentsPanel(){return `<div class="pbody">
+ <div class="goal"><div class="ph"><span>Objetivo</span></div><p>Lista de mensagens fluida com 5.000 itens, sem regressão nos testes de aceitação.</p></div>
+ <div><div class="ph"><span>Tarefas</span><span class="num">2 de 4</span></div>
+  <ul class="tasks">
+   <li class="done"><span class="s-ok">${I.ok}</span><span>Medir alturas e guardar em cache</span></li>
+   <li class="done"><span class="s-ok">${I.ok}</span><span>Trocar renderização por janela visível</span></li>
+   <li><span class="s-run">${I.ring}</span><span>Rodar testes de rolagem</span></li>
+   <li><span style="color:var(--text-2)">${I.dash}</span><span>Corrigir lint</span></li>
+  </ul></div>
+ <div class="ph"><span>Runners</span><span class="num">3</span></div>
+ <article class="runner"><div class="runner-h"><span class="st s-run">${I.ring}Rodando</span><b>revisor</b><span class="spacer"></span><span class="num" style="font-size:12px;color:var(--text-2)">42 s</span><button class="ib" aria-label="Parar runner revisor" title="Parar runner">${I.stop}</button></div>
+  <dl><dt>Modelo efetivo</dt><dd class="mono">sonnet-5.5</dd><dt>Configurado</dt><dd class="mono">sonnet-5.5</dd></dl>
+  <div class="last">lendo src/hooks/useVirtualWindow.ts</div></article>
+ <article class="runner"><div class="runner-h"><span class="st s-ok">${I.ok}Concluído</span><b>testes</b><span class="spacer"></span><span class="num" style="font-size:12px;color:var(--text-2)">1 min 03 s</span></div>
+  <dl><dt>Modelo efetivo</dt><dd>Modelo não informado</dd><dt>Configurado</dt><dd class="mono">haiku-5.5</dd></dl>
+  <div class="last">20 de 20 testes passaram</div></article>
+ <article class="runner"><div class="runner-h"><span class="st s-err">${I.err}Falhou</span><b>lint</b><span class="spacer"></span><button class="ghost">Tentar de novo</button></div>
+  <dl><dt>Modelo efetivo</dt><dd class="mono">haiku-5.5</dd><dt>Configurado</dt><dd class="mono">opus-5.5</dd></dl>
+  <div class="last">eslint saiu com código 1</div></article>
+</div>`}
+
+function changesPanel(){return `<div class="pbody">
+ <div class="ph"><span class="mono">${I.branch} master</span><span class="num">3 arquivos · <span class="s-ok">+58</span> <span class="s-err">−12</span></span></div>
+ <ul class="files">
+  <li aria-current="true"><span class="fs s-warn" title="Modificado">M</span><span class="p">src/components/MessageList.tsx</span><span class="num"><span class="s-ok">+42</span> <span class="s-err">−9</span></span><button class="ib" style="width:24px;height:24px" aria-label="Desfazer arquivo" title="Desfazer arquivo">${I.undo}</button></li>
+  <li><span class="fs s-ok" title="Adicionado">A</span><span class="p">src/hooks/useVirtualWindow.ts</span><span class="num s-ok">+16</span><button class="ib" style="width:24px;height:24px" aria-label="Desfazer arquivo">${I.undo}</button></li>
+  <li><span class="fs s-err" title="Removido">D</span><span class="p">src/legacy/scroll.ts</span><span class="num s-err">−3</span><button class="ib" style="width:24px;height:24px" aria-label="Desfazer arquivo">${I.undo}</button></li>
+ </ul>
+ <div class="codeblock"><div class="codeblock-h"><span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MessageList.tsx</span><span class="spacer"></span><span class="num">@@ 38,9 @@</span></div>
+  <div class="diff" style="border-top:0">
+   <div><span class="ln">40</span><span class="sg"> </span>export function MessageList() {</div>
+   <div><span class="ln">41</span><span class="sg"> </span>  const items = useMessages(id);</div>
+   <div class="del"><span class="ln">42</span><span class="sg">−</span>  return items.map(render);</div>
+   <div class="add"><span class="ln">42</span><span class="sg">+</span>  const win = useVirtualWindow(</div>
+   <div class="add"><span class="ln">43</span><span class="sg">+</span>    items, heightCache);</div>
+   <div class="add"><span class="ln">44</span><span class="sg">+</span>  return win.visible.map(render);</div>
+   <div><span class="ln">45</span><span class="sg"> </span>}</div>
+  </div></div>
+ <div class="commit"><label class="sr" for="cm">Mensagem do commit</label><textarea id="cm" placeholder="Mensagem do commit">Rolagem virtual na lista de mensagens</textarea>
+  <div style="display:flex;gap:8px"><button class="btn primary">Fazer commit</button><button class="btn">Desfazer tudo</button></div></div>
+</div>`}
+
+function panel(tab,drawer){return `<aside class="panel${drawer?' drawer':''}" aria-label="Agentes e Alterações">
+ <div class="ptabs" role="tablist">
+  <button role="tab" data-tab="agents" aria-selected="${tab==='agents'}">Agentes <span class="badge num">3</span></button>
+  <button role="tab" data-tab="changes" aria-selected="${tab==='changes'}">Alterações <span class="badge num">3</span></button>
+  <span class="spacer"></span>${drawer?`<button class="ib" data-act="panel" aria-label="Fechar gaveta" style="align-self:center">${I.x}</button>`:''}
+ </div>${tab==='agents'?agentsPanel():changesPanel()}</aside>`}
+
+function terminal(){return `<section class="term" aria-label="Terminal">
+ <div class="term-h"><span style="color:var(--text)">Terminal</span><span class="mono">pwsh · omp-desktop</span><span class="spacer"></span><button class="ib" data-act="term" aria-label="Recolher terminal" title="Recolher (Ctrl+\`)">${I.down}</button></div>
+<pre>PS C:\\dev\\app&gt; npm test -- virtual-scroll
+
+ PASS  tests/acceptance/virtual-scroll.spec.ts (14/20)
+   ✓ mantém a posição ao receber mensagem
+   ✓ mede altura só uma vez
+</pre></section>`}
+
+function statusbar(ctx){return `<footer class="status">
+ <button class="sb-btn num" data-act="ctx" aria-expanded="${ctx?'true':'false'}" title="Ver uso do contexto"><span class="meter"><i style="width:38%"></i></span>Contexto <span class="v">38%</span></button>
+ ${ctx?`<div class="pop" role="dialog" aria-label="Uso do contexto" style="left:8px">
+  <div style="display:flex;justify-content:space-between" class="num"><strong style="font-weight:600">Contexto</strong><span style="color:var(--text-2)">76 mil de 200 mil tokens</span></div>
+  <div class="stack"><i style="width:6%;background:var(--text-3)"></i><i style="width:14%;background:var(--accent)"></i><i style="width:12%;background:var(--success)"></i><i style="width:6%;background:var(--warning)"></i></div>
+  <div class="legend num"><span><i class="sw" style="background:var(--text-3)"></i>Sistema 6%</span><span><i class="sw" style="background:var(--accent)"></i>Arquivos 14%</span><span><i class="sw" style="background:var(--success)"></i>Conversa 12%</span><span><i class="sw" style="background:var(--warning)"></i>Ferramentas 6%</span></div>
+  <button class="btn">Compactar conversa</button></div>`:''}
+ <span class="num">Custo estimado <span class="v">US$ 1,42</span></span>
+ <span class="num" title="Cota da assinatura, separada do custo">Cota <span class="v">Indisponível</span></span>
+ <span class="spacer"></span>
+ <span class="st s-run" style="font-size:12px">${I.ring}Trabalhando</span>
+ <span class="tag" style="font-size:10px">PREVIEW</span>
+</footer>`}
+
+/* ---------- janelas ---------- */
+const S={ob:0,composer:'working',tab:'agents',side:true,term:true,panel:true,ctx:false,small:{tab:'agents',drawer:true}};
+function mainWin(){return `<div class="win" style="width:1440px;height:920px">${titlebar({term:S.term,panel:S.panel})}
+ <div class="body">${S.side?sidebar():rail()}<div class="col main">${conversation()}${composer(S.composer)}${S.term?terminal():''}</div>${S.panel?panel(S.tab):''}</div>${statusbar(S.ctx)}</div>`}
+function uwWin(){return `<div class="win uw" style="width:3440px;height:1440px">${titlebar({term:true,panel:true})}
+ <div class="body">${sidebar()}<div class="col main">${conversation()}${composer(S.composer)}${terminal()}</div>${panel('changes').replace('class="panel"','class="panel wide"')}${panel('agents')}</div>${statusbar(false)}</div>`}
+function smallWin(){return `<div class="win" style="width:1000px;height:700px">${titlebar({panel:S.small.drawer})}
+ <div class="body">${rail()}<div class="col main">${conversation()}${composer('working')}</div></div>${statusbar(false)}
+ ${S.small.drawer?`<div class="scrim" data-act="panel"></div>${panel(S.small.tab,true)}`:''}</div>`}
+
+function apprWin(){return `<div class="win" style="width:1440px;height:920px">${titlebar({panel:true})}
+ <div class="body">${sidebar()}<div class="col main">${conversation()}${composer('working')}</div>${panel('agents')}</div>${statusbar(false)}
+ <div class="modal-scrim"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ap-t">
+  <div class="modal-h"><h2 id="ap-t"><span class="s-warn">${I.warn}</span>O agente quer sua resposta</h2><p>Ele espera você responder. Se negar, só este passo é cancelado.</p></div>
+  <div class="modal-b">
+   <div class="approval" style="background:transparent"><dl class="kv" style="padding-top:8px"><dt>Comando</dt><dd class="mono">git push origin omp/rolagem-virtual</dd><dt>Alvo</dt><dd class="mono">github.com/exemplo/omp-desktop</dd><dt>Escopo</dt><dd>Envia a branch para o GitHub</dd></dl></div>
+   <fieldset><legend>1. Como o app deve saber a altura de cada mensagem?</legend>
+    <label class="opt"><input type="radio" name="q1" checked><span>Medir quando a mensagem aparece e guardar<small>Fica exato. Mede de novo se você mudar o tamanho da janela.</small></span></label>
+    <label class="opt"><input type="radio" name="q1"><span>Chutar uma altura e acertar durante a rolagem<small>Abre mais rápido, mas a lista pode pular um pouco.</small></span></label></fieldset>
+   <fieldset><legend>2. Quais testes rodar antes de enviar? <span style="font-weight:400;color:var(--text-2)">(pode marcar mais de um)</span></legend>
+    <label class="opt"><input type="checkbox" checked><span>Testes unitários</span></label>
+    <label class="opt"><input type="checkbox" checked><span>Testes de rolagem</span></label>
+    <label class="opt"><input type="checkbox"><span>Todos os testes de aceitação <small>Leva uns 6 minutos.</small></span></label></fieldset>
+   <div class="field"><label for="q3">3. Quer dizer mais alguma coisa ao agente? <span style="font-weight:400;color:var(--text-2)">(opcional)</span></label><textarea id="q3" placeholder="Escreva aqui"></textarea></div>
+  </div>
+  <div class="modal-f"><button class="btn">Negar</button><span class="spacer"></span><span class="hint">Esc nega · Ctrl+Enter aprova</span><button class="btn primary">Aprovar e enviar respostas</button></div>
+ </div></div></div>`}
+
+function setWin(){return `<div class="win" style="width:1440px;height:920px">${titlebar({title:'<b>Configurações</b>'})}
+ <div class="settings">
+  <nav class="snav" aria-label="Seções"><button>Geral</button><button aria-current="true">Modelos</button><button>Presets</button><button>Contas e cotas</button><button>Permissões</button><button>Atalhos</button><button>Aparência</button><button>Diagnóstico</button></nav>
+  <div class="scontent">
+   <h2>Modelos</h2><p>Escolha o modelo padrão e os modelos que os runners podem usar. Atalho para trocar na conversa: <kbd>Ctrl+M</kbd>.</p>
+   <table class="t"><thead><tr><th>Modelo</th><th>Conta</th><th>Raciocínio padrão</th><th>Contexto</th><th>Uso</th><th></th></tr></thead><tbody>
+    <tr><td class="mono">opus-5.5</td><td>Anthropic · assinatura</td><td>alto</td><td class="num">200 mil</td><td>Padrão da conversa</td><td><button class="ghost">Editar</button></td></tr>
+    <tr><td class="mono">sonnet-5.5</td><td>Anthropic · assinatura</td><td>médio</td><td class="num">200 mil</td><td>Runners de revisão</td><td><button class="ghost">Editar</button></td></tr>
+    <tr><td class="mono">haiku-5.5</td><td>Anthropic · API</td><td>baixo</td><td class="num">200 mil</td><td>Runners de teste e lint</td><td><button class="ghost">Editar</button></td></tr>
+    <tr><td class="mono">modelo-local</td><td>Ollama</td><td>Indisponível</td><td>Indisponível</td><td>—</td><td><button class="ghost">Editar</button></td></tr>
+   </tbody></table>
+   <h3>Presets</h3>
+   <table class="t"><thead><tr><th>Preset</th><th>Modelo</th><th>Raciocínio</th><th>Permissões</th></tr></thead><tbody>
+    <tr><td>Revisão rápida</td><td class="mono">sonnet-5.5</td><td>médio</td><td>Pedir sempre</td></tr>
+    <tr><td>Refatoração longa</td><td class="mono">opus-5.5</td><td>alto</td><td>Aceitar edições</td></tr></tbody></table>
+   <h3>Contas e cotas</h3>
+   <div class="acct"><div class="acct-h"><b>Anthropic</b><span style="color:var(--text-2)">· assinatura Max</span><span class="spacer"></span><span class="st s-ok" style="font-size:12px">${I.ok}Conectada</span></div>
+    <div class="usage num"><span style="color:var(--text-2)">Cota de 5 horas</span><div class="bar"><i style="width:62%"></i></div><span>62% · renova 18:00</span>
+     <span style="color:var(--text-2)">Cota semanal</span><div class="bar"><i style="width:28%"></i></div><span>28% · renova 10/11</span></div></div>
+   <div class="acct"><div class="acct-h"><b>Anthropic</b><span style="color:var(--text-2)">· chave de API</span><span class="spacer"></span><span class="st s-ok" style="font-size:12px">${I.ok}Conectada</span></div>
+    <div class="usage num"><span style="color:var(--text-2)">Custo estimado no mês</span><div></div><span>US$ 18,40</span></div></div>
+   <div class="acct"><div class="acct-h"><b>Ollama</b><span style="color:var(--text-2)">· local</span><span class="spacer"></span><span class="st s-warn" style="font-size:12px">${I.warn}Sem retorno de uso</span></div>
+    <div class="usage"><span style="color:var(--text-2)">Uso</span><div class="bar" aria-hidden="true"></div><span class="unav">${I.info}Indisponível</span></div>
+    <p class="hint" style="margin:0">O serviço não informa uso. Mostramos "Indisponível" em vez de 0%.</p></div>
+  </div></div></div>`}
+
+function startWin(){return `<div class="win" style="width:1440px;height:920px">${titlebar({title:'<b>OMP</b>'})}
+ <div class="center"><div class="start">
+  <div class="start-hero">
+   ${I.logo.replace('width="18" height="18"','width="48" height="48"')}
+   <div><h2>Bom te ver por aqui.</h2><p>Escolha onde o agente vai trabalhar hoje.</p></div>
+  </div>
+  <div class="start-grid">
+   <button class="start-card primary-card">
+    <span class="sc-ic">${I.folder.replace(/14/g,'20')}</span>
+    <span class="sc-t">Abrir pasta</span>
+    <span class="sc-d">O agente lê, edita e roda comandos nesse projeto.</span>
+    <kbd>Ctrl+Shift+P</kbd></button>
+   <button class="start-card">
+    <span class="sc-ic">${I.branch.replace(/width="10" height="10"/,'width="20" height="20"')}</span>
+    <span class="sc-t">Clonar repositório</span>
+    <span class="sc-d">Cole o endereço do Git. O app baixa e já abre.</span></button>
+   <button class="start-card">
+    <span class="sc-ic"><svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>
+    <span class="sc-t">Conversar sem projeto</span>
+    <span class="sc-d">Para dúvidas e rascunhos. Sem acesso a arquivos.</span>
+    <kbd>Ctrl+N</kbd></button>
+  </div>
+  <div class="drop" aria-label="Arraste uma pasta para abrir">
+   ${I.folder.replace(/14/g,'16')}<span>Ou arraste uma pasta para esta janela</span>
+  </div>
+  <div class="start-cols">
+   <div class="box">
+    <div class="ph" style="margin-bottom:8px"><span>Projetos recentes</span></div>
+    <p style="font-size:13px;color:var(--text-2);margin:0">Nenhum projeto ainda. Quando você abrir um, ele aparece aqui para voltar com um clique.</p>
+   </div>
+   <div class="box">
+    <div class="ph" style="margin-bottom:8px"><span>Antes de começar</span><span class="num">2 de 3</span></div>
+    <ul class="checks">
+     <li><span class="s-ok">${I.ok}</span><span>OMP encontrado</span></li>
+     <li><span class="s-ok">${I.ok}</span><span>Conta Anthropic conectada</span></li>
+     <li><span style="color:var(--text-2)">${I.dash}</span><span>Abrir o primeiro projeto</span></li>
+    </ul>
+   </div>
+  </div>
+  <div class="shortcuts"><span>Paleta de comandos <kbd>Ctrl+K</kbd></span><span>Modelos <kbd>Ctrl+M</kbd></span><span>Terminal <kbd>Ctrl+\`</kbd></span><span>Barra lateral <kbd>Ctrl+B</kbd></span></div>
+ </div></div>${statusbar(false).replace(/<span class="st s-run"[\s\S]*?Trabalhando<\/span>/,'<span>Pronto</span>')}</div>`}
+
+const OB=['Boas-vindas','Seu OMP','Contas','Aparência','Primeiro projeto'];
+function obStep(i){
+ if(i===0)return `<div class="ob-art">${I.logo.replace('width="18" height="18"','width="72" height="72"')}</div>
+  <h2>O OMP, agora com janela.</h2>
+  <p class="ob-lead">Converse com o agente, acompanhe runners em paralelo, aprove ações e revise o Git sem sair do app.</p>
+  <ul class="ob-points">
+   <li><span class="ob-n">1</span><div><b>Usa o seu OMP</b><span>Cada sessão roda o próprio <span class="mono">omp</span>, com os mesmos modelos, credenciais, presets e sessões do terminal.</span></div></li>
+   <li><span class="ob-n">2</span><div><b>Você aprova tudo</b><span>O app nunca aprova nada sozinho. Você vê comando, alvo e escopo antes de decidir.</span></div></li>
+   <li><span class="ob-n">3</span><div><b>Nada some</b><span>Fechou o app? As abas voltam com a mesma conversa, e nenhum pedido é reenviado.</span></div></li>
+  </ul>`;
+ if(i===1)return `<h2>Encontramos seu OMP</h2><p class="ob-lead">Conferimos o que o app precisa para funcionar.</p>
+  <ul class="ob-checks">
+   <li><span class="s-ok">${I.ok}</span><div><b>OMP</b><span class="mono">C:\\Users\\voce\\.bun\\bin\\omp.exe</span></div><span class="ob-tag">Pronto</span></li>
+   <li><span class="s-ok">${I.ok}</span><div><b>Git</b><span>Para o painel Alterações</span></div><span class="ob-tag">Pronto</span></li>
+   <li><span class="s-ok">${I.ok}</span><div><b>Terminal</b><span>PowerShell</span></div><span class="ob-tag">Pronto</span></li>
+  </ul>
+  <p class="hint">Procuramos o OMP em <span class="mono">OMP_DESKTOP_OMP_PATH</span> e depois no <span class="mono">PATH</span>. Usa outro? <button class="ghost" style="margin-left:-6px">Escolher omp.exe</button></p>`;
+ if(i===2)return `<h2>Suas contas</h2><p class="ob-lead">O app usa as contas que o OMP já tem. Nenhuma senha ou token passa pela interface.</p>
+  <div class="acct" style="margin:0"><div class="acct-h"><b>Anthropic</b><span style="color:var(--text-2)">· assinatura</span><span class="spacer"></span><span class="st s-ok" style="font-size:12px">${I.ok}Conectada</span></div>
+   <div class="usage num"><span style="color:var(--text-2)">Cota de 5 horas</span><div class="bar"><i style="width:12%"></i></div><span>12%</span></div></div>
+  <div style="display:flex;gap:8px;align-items:center"><button class="btn">${I.plus}Adicionar conta</button><span class="hint">O login abre no seu navegador.</span></div>
+  <p class="hint">Uso que o serviço não informa aparece como "Indisponível", nunca como 0%. O custo das sessões é sempre estimado.</p>`;
+ if(i===3)return `<h2>Do seu jeito</h2><p class="ob-lead">Dá para mudar tudo depois em Configurações.</p>
+  <div class="ob-themes" role="radiogroup" aria-label="Tema">
+   <button role="radio" aria-checked="${document.documentElement.dataset.theme!=='light'}" data-theme-set="dark" class="ob-theme"><span class="ob-prev" style="background:#0E1013"><i style="background:#14171B"></i><i style="background:#1C2026"></i></span>Escuro</button>
+   <button role="radio" aria-checked="${document.documentElement.dataset.theme==='light'}" data-theme-set="light" class="ob-theme"><span class="ob-prev" style="background:#F3F5F7"><i style="background:#FFFFFF"></i><i style="background:#E3EDFB"></i></span>Claro</button>
+   <button role="radio" aria-checked="false" class="ob-theme"><span class="ob-prev" style="background:linear-gradient(90deg,#0E1013 50%,#F3F5F7 50%)"><i style="background:#14171B"></i><i style="background:#FFFFFF"></i></span>Igual ao Windows</button>
+  </div>
+  <div class="box"><div class="ph" style="margin-bottom:8px"><span>Atalhos que valem decorar</span></div>
+   <div class="shortcuts"><span>Paleta de comandos <kbd>Ctrl+K</kbd></span><span>Trocar modelo <kbd>Ctrl+M</kbd></span><span>Nova sessão <kbd>Ctrl+N</kbd></span><span>Abrir projeto <kbd>Ctrl+Shift+P</kbd></span><span>Terminal <kbd>Ctrl+\`</kbd></span><span>Parar o agente <kbd>Esc</kbd></span></div></div>`;
+ return `<h2>Onde vamos trabalhar?</h2><p class="ob-lead">Abra a pasta de um projeto para o agente ler e alterar arquivos.</p>
+  <div class="start-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+   <button class="start-card primary-card" data-goto="v-main"><span class="sc-ic">${I.folder.replace(/14/g,'20')}</span><span class="sc-t">Abrir pasta</span><span class="sc-d">O agente lê, edita e roda comandos nesse projeto.</span></button>
+   <button class="start-card" data-goto="v-main"><span class="sc-ic"><svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="sc-t">Conversar sem projeto</span><span class="sc-d">Para dúvidas e rascunhos. Sem acesso a arquivos.</span></button>
+  </div>
+  <div class="drop">${I.folder.replace(/14/g,'16')}<span>Ou arraste uma pasta para esta janela</span></div>`;
+}
+function onbWin(){const i=S.ob;return `<div class="win" style="width:1440px;height:920px">${titlebar({title:'<b>Primeiros passos</b>'})}
+ <div class="ob">
+  <nav class="ob-nav" aria-label="Etapas">
+   <ol>${OB.map((n,k)=>`<li><button data-ob="${k}" aria-current="${k===i?'step':'false'}" class="${k<i?'done':''}"><span class="ob-dot">${k<i?I.ok:k+1}</span>${n}</button></li>`).join('')}</ol>
+   <p class="hint" style="margin-top:auto">Leva menos de um minuto.</p>
+  </nav>
+  <div class="ob-main"><div class="ob-body" key="${i}">${obStep(i)}</div>
+   <div class="ob-foot">
+    ${i>0?`<button class="btn" data-ob="${i-1}">Voltar</button>`:'<button class="btn quiet" data-goto="v-start">Pular</button>'}
+    <span class="spacer"></span><span class="hint num">${i+1} de ${OB.length}</span>
+    ${i<OB.length-1?`<button class="btn primary" data-ob="${i+1}">Continuar</button>`:''}
+   </div></div>
+ </div></div>`}
+
+function diagWin(){return `<div class="win" style="width:1440px;height:920px">${titlebar({title:'<b>Diagnóstico</b>'})}
+ <div class="center"><div class="hero">
+  <div style="display:flex;align-items:center;gap:8px" class="s-err">${I.err.replace(/12/g,'20')}<h2 style="color:var(--text)">OMP não encontrado</h2></div>
+  <p>O app precisa do executável do OMP para conversar com o agente. Ele não foi encontrado nos lugares abaixo.</p>
+  <div class="box"><ul class="checks">
+   <li><span class="s-err">${I.err}</span><span>Variável <span class="mono">OMP_DESKTOP_OMP_PATH</span>: não definida</span></li>
+   <li><span class="s-err">${I.err}</span><span>Opção <span class="mono">--omp-path</span>: não informada</span></li>
+   <li><span class="s-err">${I.err}</span><span><span class="mono">PATH</span> do sistema: <span class="mono">omp</span> não encontrado</span></li>
+   <li><span class="s-ok">${I.ok}</span><span>Git encontrado</span></li>
+   <li><span class="s-ok">${I.ok}</span><span>Terminal: PowerShell</span></li></ul></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Escolher omp.exe</button><button class="btn">Verificar de novo</button><button class="btn quiet">Copiar relatório</button></div>
+  <p class="hint">Ainda não tem o OMP? Veja como instalar em <a href="https://omp.sh">omp.sh</a> e depois clique em Verificar de novo.</p>
+ </div></div></div>`}
+
+/* ---------- render e eventos ---------- */
+function fit(id){const host=$('#'+id),win=host.firstElementChild;if(!win)return;const w=parseInt(win.style.width),h=parseInt(win.style.height);const avail=host.parentElement.clientWidth;const s=Math.min(1,avail/w);win.style.transform=s<1?`scale(${s})`:'';win.style.transformOrigin='top left';host.style.height=(h*s)+'px';host.style.width=(w*s)+'px'}
+function render(){
+ $('#mainWin').innerHTML=mainWin();$('#smallWin').innerHTML=smallWin();$('#apprWin').innerHTML=apprWin();
+ $('#setWin').innerHTML=setWin();$('#startWin').innerHTML=startWin();$('#diagWin').innerHTML=diagWin();$('#onbWin').innerHTML=onbWin();
+ $('#uwWin').innerHTML=uwWin();
+ ['mainWin','smallWin','apprWin','setWin','startWin','diagWin','onbWin','uwWin'].forEach(fit);
+}
+function goView(id){$$('#viewTabs [role=tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.view===id));$$('.view').forEach(v=>v.classList.toggle('on',v.id===id));render();window.scrollTo({top:0})}
+document.addEventListener('click',e=>{
+ const t=e.target.closest('button,[data-act]');if(!t)return;
+ if(t.dataset.view){goView(t.dataset.view);return}
+ if(t.dataset.ob!==undefined){S.ob=+t.dataset.ob;render();return}
+ if(t.dataset.goto){goView(t.dataset.goto);return}
+ if(t.dataset.themeSet||t.dataset.act==='theme'){const th=t.dataset.themeSet||(document.documentElement.dataset.theme==='light'?'dark':'light');document.documentElement.dataset.theme=th;$$('[data-theme-set]').forEach(b=>b.setAttribute('aria-selected',b.dataset.themeSet===th));try{localStorage.setItem('omp-theme',th)}catch(_){}render();buildTokens();return}
+ if(t.dataset.composer){S.composer=t.dataset.composer;$$('[data-composer]').forEach(b=>b.setAttribute('aria-selected',b===t));render();return}
+ const inSmall=t.closest('#smallWin');
+ if(t.dataset.tab){if(inSmall)S.small.tab=t.dataset.tab;else{S.tab=t.dataset.tab;S.panel=true}render();return}
+ const a=t.dataset.act;
+ if(a==='side'&&!inSmall){S.side=!S.side;render()}
+ else if(a==='term'&&!inSmall){S.term=!S.term;render()}
+ else if(a==='panel'){if(inSmall)S.small.drawer=!S.small.drawer;else S.panel=!S.panel;render()}
+ else if(a==='ctx'){S.ctx=!S.ctx;render()}
+ else if(a==='model'){const m=t.nextElementSibling,open=m.hidden;m.hidden=!open;t.setAttribute('aria-expanded',open)}
+ else if(t.closest('.seg')){t.parentElement.querySelectorAll('button').forEach(b=>b.setAttribute('aria-checked',b===t));const sel=t.closest('.mpick').previousElementSibling;sel.innerHTML=sel.innerHTML.replace(/<\/span>\s*[^<]+<svg/,'</span> '+t.textContent+'<svg')}
+ else if(t.closest('.mpick')&&t.getAttribute('role')==='menuitemradio'){const box=t.closest('.mpick');box.querySelectorAll('[role=menuitemradio]').forEach(b=>{const on=b===t;b.setAttribute('aria-checked',on);b.querySelector('.ck').innerHTML=on?I.ok:''});const sel=box.previousElementSibling;const name=t.childNodes[1].textContent;sel.innerHTML=sel.innerHTML.replace(/^[^<]+/,name+' ')}
+ else if(a==='menu'){const m=t.nextElementSibling,open=m.hidden;m.hidden=!open;t.setAttribute('aria-expanded',open)}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){let ch=false;if(S.ctx){S.ctx=false;ch=true}if(S.small.drawer&&$('#v-small').classList.contains('on')){S.small.drawer=false;ch=true}$$('.menu').forEach(m=>{if(!m.hidden){m.hidden=true;ch=true}});if(ch)render()}});
+window.addEventListener('resize',()=>['mainWin','smallWin','apprWin','setWin','startWin','diagWin','onbWin'].forEach(fit));
+
+/* ---------- tokens ---------- */
+const TOK=['bg','panel','elevated','hover','selected','text','text-2','text-3','border','border-strong','accent','accent-hover','on-accent','success','warning','danger','focus'];
+function buildTokens(){
+ const cs=getComputedStyle(document.documentElement);
+ $('#swatches').innerHTML=TOK.map(k=>`<div class="swatch"><i style="background:var(--${k})"></i><div><span>--${k}</span><code>${cs.getPropertyValue('--'+k).trim()}</code></div></div>`).join('');
+}
+const css=$('style').textContent;const start=css.indexOf(':root{'),end=css.indexOf('@media (prefers-reduced-motion');
+$('#tokenCode').textContent=css.slice(start,end).trim();
+
+let th='dark';try{th=localStorage.getItem('omp-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(_){}
+document.documentElement.dataset.theme=th;$$('[data-theme-set]').forEach(b=>b.setAttribute('aria-selected',b.dataset.themeSet===th));
+render();buildTokens();
+})();
+</script>
+</body>
+</html>

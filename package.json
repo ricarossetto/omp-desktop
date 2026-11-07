@@ -1,0 +1,58 @@
+{
+	"name": "omp-desktop",
+	"private": true,
+	"version": "0.3.0",
+	"type": "module",
+	"description": "OMP Desktop: aplicativo Windows para o mecanismo OMP",
+	"main": "out/main/index.js",
+	"scripts": {
+		"dev": "bun scripts/build-host.ts && electron-vite dev",
+		"build:host": "bun scripts/build-host.ts",
+		"build": "bun scripts/build-host.ts && electron-vite build",
+		"start": "electron .",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test tests/unit",
+		"test:acceptance": "bun run build && playwright test",
+		"dist:win": "bun run build && bun scripts/dist-win.ts",
+		"smoke:installed": "bun scripts/smoke-installed.ts"
+	},
+	"dependencies": {
+		"@lydell/node-pty": "1.2.0-beta.18",
+		"@oh-my-pi/pi-coding-agent": "18.16.0",
+		"zod": "4.6.7"
+	},
+	"devDependencies": {
+		"@axe-core/playwright": "^4.14.0",
+		"@monaco-editor/react": "4.7.0",
+		"@playwright/test": "1.65.0",
+		"@types/bun": "1.4.4",
+		"@types/node": "26.6.6",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
+		"@vitejs/plugin-react": "6.2.1",
+		"@xterm/addon-fit": "0.11.0",
+		"@xterm/xterm": "6.0.0",
+		"dompurify": "3.4.17",
+		"electron": "45.2.3",
+		"electron-builder": "26.18.0",
+		"electron-vite": "6.0.0",
+		"monaco-editor": "0.57.0",
+		"react": "19.3.1",
+		"react-dom": "19.3.1",
+		"react-markdown": "10.1.0",
+		"remark-gfm": "4.0.1",
+		"typescript": "7.0.2",
+		"vite": "8.3.6"
+	},
+	"overrides": {
+		"dompurify": "3.4.17"
+	},
+	"license": "MIT",
+	"author": {
+		"name": "OMP Desktop contributors"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/ricarossetto/omp-desktop.git"
+	}
+}
