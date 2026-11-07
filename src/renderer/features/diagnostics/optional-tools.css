@@ -1,0 +1,206 @@
+/* Ferramentas opcionais (Git/Node) — usada em Diagnóstico, introdução e Configurações. */
+.omp-optional-tools {
+	--omp-bg: var(--bg, #111315);
+	--omp-panel: var(--panel, #191c1f);
+	--omp-text: var(--text, #e6e8ea);
+	--omp-muted: var(--muted, #a4aab2);
+	--omp-border: var(--border, #32383f);
+	--omp-accent: var(--accent, #83b4e8);
+	--omp-success: var(--success, #63bd8d);
+	--omp-warning: var(--warning, #e0b45c);
+	--omp-error: var(--error, #e37f7f);
+	--omp-radius-sm: var(--radius-sm, 4px);
+	--omp-radius-md: var(--radius-md, 8px);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	color: var(--omp-text);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.omp-optional-tools *,
+.omp-optional-tools *::before,
+.omp-optional-tools *::after {
+	box-sizing: border-box;
+}
+
+.omp-optional-tools__head h2 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+.omp-optional-tools__head p {
+	margin: 2px 0 0;
+}
+
+.omp-optional-tools__list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.omp-optional-tool {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-md);
+	background: var(--omp-panel);
+}
+
+.omp-optional-tool__icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	flex: 0 0 24px;
+	color: var(--omp-accent);
+}
+
+.omp-optional-tool__body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.omp-optional-tool__head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.omp-optional-tool__head b {
+	font-weight: 600;
+}
+.omp-optional-tool__body p {
+	margin: 0;
+}
+
+.omp-optional-tool__badge {
+	display: inline-flex;
+	align-items: center;
+	min-height: 20px;
+	padding: 0 8px;
+	border: 1px solid var(--omp-border);
+	border-radius: 999px;
+	font-size: 12px;
+	color: var(--omp-muted);
+	white-space: nowrap;
+}
+.omp-optional-tool__badge.is-ok {
+	color: var(--omp-success);
+	border-color: color-mix(in srgb, var(--omp-success) 55%, var(--omp-border));
+}
+.omp-optional-tool__badge.is-error {
+	color: var(--omp-error);
+	border-color: color-mix(in srgb, var(--omp-error) 55%, var(--omp-border));
+}
+.omp-optional-tool__badge.is-installing {
+	color: var(--omp-accent);
+	border-color: color-mix(in srgb, var(--omp-accent) 55%, var(--omp-border));
+}
+
+.omp-optional-tool__meta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	font-size: 12px;
+	color: var(--omp-muted);
+}
+
+.omp-optional-tool__progress {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.omp-optional-tool__progress p {
+	margin: 0;
+}
+.omp-optional-tool__bar {
+	width: 100%;
+	height: 8px;
+	accent-color: var(--omp-accent);
+}
+
+.omp-optional-tool__error {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid color-mix(in srgb, var(--omp-error) 55%, var(--omp-border));
+	border-radius: var(--omp-radius-sm);
+	background: color-mix(in srgb, var(--omp-error) 10%, transparent);
+	color: var(--omp-text);
+}
+.omp-optional-tool__error p {
+	margin: 0;
+}
+
+.omp-optional-tool__consent {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 45%, var(--omp-border));
+	border-radius: var(--omp-radius-sm);
+	background: color-mix(in srgb, var(--omp-accent) 8%, transparent);
+}
+
+.omp-optional-tool__manual {
+	font-size: 13px;
+}
+.omp-optional-tool__manual summary {
+	cursor: pointer;
+	color: var(--omp-accent);
+	min-height: 24px;
+	display: flex;
+	align-items: center;
+}
+.omp-optional-tool__manual p {
+	margin: 4px 0;
+	word-break: break-all;
+}
+.omp-optional-tool__manual .omp-button {
+	margin-top: 4px;
+}
+
+.omp-optional-tool__actions {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	flex: 0 0 auto;
+}
+
+.omp-optional-tools .omp-button {
+	min-height: 24px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	justify-content: center;
+}
+.omp-optional-tools .omp-button:focus-visible,
+.omp-optional-tools summary:focus-visible {
+	outline: 2px solid var(--omp-accent);
+	outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+	.omp-optional-tool {
+		flex-wrap: wrap;
+	}
+	.omp-optional-tool__actions {
+		flex-direction: row;
+		flex-wrap: wrap;
+		width: 100%;
+		padding-left: 34px;
+	}
+}

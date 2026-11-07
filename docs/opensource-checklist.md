@@ -1,25 +1,54 @@
-# Checklist de publicação
+# Release checklist
 
-Este checklist descreve o processo de release sem dados de contas ou caminhos de desenvolvimento.
+This checklist describes the release process without account data or development
+paths.
 
-## Antes de publicar
+## Before publishing
 
-- Executar `bun install --frozen-lockfile --ignore-scripts`, checagem de tipos, testes unitários e aceitação em Electron.
-- Executar `bun audit`; registrar alcance, justificativa e data de revisão de qualquer dependência ainda sinalizada em [release-security.md](release-security.md).
-- Conferir os READMEs em [português](../README.md), [inglês](README.en-US.md) e [chinês simplificado](README.zh-CN.md).
-- Conferir capturas e seus metadados: não incluir contas, e-mails pessoais, diretórios de usuário, tokens ou sessões reais privadas.
-- Usar identidade pública ou `noreply` nos commits. Verificar todo o histórico que ficará público, não apenas o último arquivo.
-- Se o histórico antigo contiver dados privados, mantê-lo separado e privado; publicar somente um snapshot limpo, sem compartilhar objetos Git antigos.
-- Preservar licenças e avisos de terceiros em `resources/licenses` e nos pacotes distribuídos.
-- Construir o instalador a partir do commit destinado ao release e testar a instalação fora do checkout, com perfil temporário.
-- Inspecionar o conteúdo instalado e confirmar a ausência de configurações, credenciais, logs, testes e mapas de código-fonte da aplicação.
-- Calcular SHA-256 do instalador final e publicar `SHA256SUMS.txt` junto dele.
-- Enviar somente os arquivos explicitamente revisados. Não enviar a pasta `release/` inteira: `builder-debug.yml` contém caminhos da máquina de build.
-- Não publicar `.cache`, perfis de navegador, resultados de testes, cópias de segurança privadas ou `win-unpacked`.
-- Confirmar que a tag, o código publicado, a versão do aplicativo e o instalador correspondem.
+- Run `bun install --frozen-lockfile --ignore-scripts`, the type check, unit
+  tests, and acceptance tests in Electron.
+- Run `bun audit`; record the scope, rationale, and review date of any dependency
+  still flagged in [release-security.md](release-security.md).
+- Check the READMEs in [English](../README.md), [Portuguese](README.pt-BR.md), and
+  [Simplified Chinese](README.zh-CN.md).
+- Check screenshots and their metadata: do not include accounts, personal emails,
+  user directories, tokens, or real private sessions.
+- Use a public or `noreply` identity in commits. Verify the entire history that
+  will become public, not just the latest file.
+- If the old history contains private data, keep it separate and private; publish
+  only a clean snapshot without sharing old Git objects.
+- Preserve third-party licenses and notices in `resources/licenses` and in the
+  distributed packages.
+- Build the installer from the commit intended for the release and test the
+  installation outside the checkout, with a temporary profile.
+- When OMP is absent, exercise the assisted install in a temporary profile:
+  confirm that it uses `%LOCALAPPDATA%\omp`, verifies SHA-256 and `--version`,
+  never overwrites an existing file, does not modify the persistent PATH or
+  registry, and does not modify the real `~/.omp` profile.
+- Exercise the optional Git and Node.js installs in a temporary profile: confirm
+  official sources, SHA-256 verification, managed folders, no administrator
+  rights, no overwrite of global tools, no persistent PATH/registry changes, and
+  that new terminals and OMP child processes see the tools without restarting
+  running agents.
+- Inspect the installed content and confirm that no application settings,
+  credentials, logs, tests, or source maps are present.
+- Compute the SHA-256 of the final installer and publish `SHA256SUMS.txt` next to
+  it.
+- Upload only the explicitly reviewed files. Do not upload the whole `release/`
+  folder: `builder-debug.yml` contains build-machine paths.
+- Do not publish `.cache`, browser profiles, test results, private backups, or
+  `win-unpacked`.
+- Confirm that the tag, the published code, the app version, and the installer
+  match.
 
-## Limites do produto
+## Product limits
 
-O instalador Windows x64 não tem assinatura digital nem atualização automática. Ele inclui Bun, mas não instala o executável OMP. A publicação de hashes não substitui uma assinatura de código nem uma auditoria independente.
+The Windows x64 installer has no digital signature and no automatic update. It
+bundles Bun but does not bundle the OMP executable; the first-run assistant can
+install the pinned official Windows binary (18.16.0) after explicit user consent,
+verifying SHA-256 and `--version` without overwriting an existing file. Publishing
+hashes does not replace code signing or an independent audit.
 
-A auditoria automatizada de acessibilidade e os testes de interface não substituem testes com pessoas usuárias e tecnologias assistivas. Dados digitados nas conversas podem conter informações sensíveis: revise qualquer material antes de compartilhá-lo.
+Automated accessibility checks and interface tests do not replace testing with
+users and assistive technology. Data typed into conversations may contain
+sensitive information: review any material before sharing it.

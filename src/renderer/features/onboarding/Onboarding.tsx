@@ -17,6 +17,7 @@ import { activeWorkspace, type ThemeMode } from "../../store/state";
 import { StatusIcon } from "../agents/StatusIcon";
 import { errorText, isRecord } from "../agents/ui-utils";
 import { DiagnosticsScreen } from "../diagnostics/DiagnosticsScreen";
+import { OptionalToolsSection } from "../diagnostics/OptionalToolsSection";
 import {
 	isConfigConflict,
 	normalizeSettings,
@@ -30,6 +31,7 @@ import {
 	selectorMatchesRole,
 	withDefaultRole,
 } from "./onboarding-model";
+import { effectiveOnboardingRuntime, ompStatusKey } from "./onboarding-runtime";
 import "./onboarding.css";
 
 const DONE_KEY = "omp-desktop.onboarding.done";
@@ -126,7 +128,9 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 	const [runtimeOverride, setRuntimeOverride] = useState<RuntimeStatus | null>(null);
 	// O diagnóstico embutido atualiza este override; o checklist não pode ficar
 	// preso ao status antigo do store depois de escolher outro omp.exe.
-	const effectiveRuntime = runtimeOverride ?? runtime;
+	// Dependências vêm sempre do store (fonte única), então o progresso de
+	// Git/Node não regride o OMP capturado no clique.
+	const effectiveRuntime = effectiveOnboardingRuntime(runtimeOverride, runtime);
 	const [settings, setSettings] = useState<SettingsSnapshot | null>(null);
 	const [settingsError, setSettingsError] = useState<string | null>(null);
 	const [settingsAttempted, setSettingsAttempted] = useState(false);
@@ -146,10 +150,13 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 		headingRef.current?.focus();
 	}, [step]);
 
+	// Só um status OMP novo invalida o override local do diagnóstico. Eventos
+	// de progresso de Git/Node mudam `runtime.dependencies`, mas não podem
+	// apagar a seleção de omp.exe feita no diagnóstico embutido.
+	const runtimeOmpKey = ompStatusKey(runtime);
 	useEffect(() => {
-		// Um status novo do store invalida o override local do diagnóstico.
 		setRuntimeOverride(null);
-	}, [runtime]);
+	}, [runtimeOmpKey]);
 
 	const loadUsage = useCallback(async () => {
 		setUsageLoading(true);
@@ -438,13 +445,28 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 											: undefined
 									}
 									action={
-										<button
-											type="button"
-											className="onb__inline-action"
-											onClick={() => void actions.selectOmp()}
-										>
-											{t("onb.env.selectOmp")}
-										</button>
+										<>
+											{!effectiveRuntime?.ompPath ||
+											effectiveRuntime?.phase === "omp-incompatible" ? (
+												<button
+													type="button"
+													className="onb__inline-action"
+													onClick={() => void actions.installOmp()}
+													disabled={effectiveRuntime?.install?.state === "installing"}
+												>
+													{effectiveRuntime?.install?.state === "installing"
+														? t("onb.env.installing")
+														: t("onb.env.installOmp")}
+												</button>
+											) : null}
+											<button
+												type="button"
+												className="onb__inline-action"
+												onClick={() => void actions.selectOmp()}
+											>
+												{t("onb.env.selectOmp")}
+											</button>
+										</>
 									}
 								/>
 								<CheckRow
@@ -452,21 +474,6 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 									label={t("onb.env.protocol")}
 									ok={Boolean(effectiveRuntime?.ompPath)}
 									value={t("onb.env.protocolValue")}
-								/>
-								<CheckRow
-									icon="git"
-									label={t("onb.env.git")}
-									ok={Boolean(effectiveRuntime?.gitVersion)}
-									value={effectiveRuntime?.gitVersion}
-									action={
-										<button
-											type="button"
-											className="onb__inline-action"
-											onClick={() => setDiagnosticsOpen((open) => !open)}
-										>
-											{diagnosticsOpen ? t("onb.env.closeDiagnostics") : t("onb.env.openDiagnostics")}
-										</button>
-									}
 								/>
 								<CheckRow
 									icon="terminal"
@@ -489,22 +496,27 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 									icon="agent"
 									label={t("onb.env.bun")}
 									ok={Boolean(effectiveRuntime?.bunPath)}
-									value={effectiveRuntime?.bunPath}
-									action={
-										effectiveRuntime?.bunPath ? undefined : (
-											<button
-												type="button"
-												className="onb__inline-action"
-												onClick={() => setDiagnosticsOpen(true)}
-											>
-												{t("onb.env.openDiagnostics")}
-											</button>
-										)
+									value={
+										effectiveRuntime?.bunPath
+											? `${effectiveRuntime.bunPath} · ${t("dep.included")}`
+											: t("dep.included")
 									}
 								/>
 							</ul>
+							<OptionalToolsSection
+								runtime={effectiveRuntime}
+								onDependencies={(snapshot) => actions.applyDependencies(snapshot)}
+							/>
+							<div className="onb__env-actions">
+								<button
+									type="button"
+									className="onb__inline-action"
+									onClick={() => setDiagnosticsOpen((open) => !open)}
+								>
+									{diagnosticsOpen ? t("onb.env.closeDiagnostics") : t("onb.env.openDiagnostics")}
+								</button>
+							</div>
 							<p className="muted text-xs">{t("onb.env.protocolHint")}</p>
-							<p className="muted text-xs">{t("onb.env.gitHint")}</p>
 							{diagnosticsOpen && effectiveRuntime ? (
 								<div className="onb__diagnostics">
 									<DiagnosticsScreen

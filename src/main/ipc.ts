@@ -13,6 +13,7 @@ import * as path from "node:path";
 import {
 	desktopRequestSchema,
 	type AttachmentDto,
+	type DependencyRuntimeSnapshot,
 	type DesktopEvent,
 	type DesktopRequest,
 	type DesktopResult,
@@ -24,6 +25,7 @@ import {
 	type UiResponse,
 	type WorkspaceDto,
 } from "../shared/contracts";
+import type { DependencyKind } from "../shared/dependency-install-types";
 import type { SessionSnapshot } from "../shared/session-types";
 import { readWorkspaceFile, externalOpenMode, resolveFileForExternalOpen } from "./files";
 import { gitCommit, gitDiff, gitStage, gitStatus, gitUnstage, GitError, type GitCommitResult } from "./git";
@@ -122,6 +124,13 @@ export interface BridgeDeps {
 	getStatus(): RuntimeStatus;
 	awaitRuntimeStatus(): Promise<RuntimeStatus>;
 	restartHost(ompPath?: string): Promise<void>;
+	installOmp(): Promise<RuntimeStatus>;
+	/** Sondagem local de Git/Node; nunca instala nem reinicia o host. */
+	dependencies(): Promise<DependencyRuntimeSnapshot>;
+	/** Instalação por clique; single-flight por ferramenta no main. */
+	installDependency(kind: DependencyKind): Promise<DependencyRuntimeSnapshot>;
+	/** Insere os diretórios gerenciados no PATH do processo antes de um PTY. */
+	prepareOptionalToolEnv(): void;
 	log(level: "info" | "warn" | "error", event: string, fields?: Record<string, unknown>): void;
 	isSmokeMode(): boolean;
 	markSessionBusy?(sessionId: string): void;
@@ -370,6 +379,15 @@ export class MainBridge {
 		switch (request.op) {
 			case "runtime.status":
 				return await this.deps.awaitRuntimeStatus();
+
+			case "runtime.installOmp":
+				return await this.deps.installOmp();
+
+			case "runtime.dependencies":
+				return await this.deps.dependencies();
+
+			case "runtime.installDependency":
+				return await this.deps.installDependency(request.dependency);
 
 			case "runtime.selectOmp": {
 				const win = this.requireWindow();
@@ -678,6 +696,9 @@ export class MainBridge {
 				const workspace = await this.requireAvailableWorkspace(request.workspaceId);
 				const win = this.requireWindow();
 				const cwd = await assertWorkspaceDirectory(workspace.path);
+				// O PTY herda o PATH do processo; os diretórios gerenciados entram
+				// antes do spawn para um terminal novo já ver Git/Node instalados.
+				this.deps.prepareOptionalToolEnv();
 				const shellPath = await this.deps.runtime.resolveShell();
 				const info = await this.deps.terminals.create({
 					workspaceId: request.workspaceId,

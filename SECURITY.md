@@ -1,30 +1,34 @@
-# Segurança
+# Security
 
-## Como reportar
+## How to report
 
-Não abra uma issue pública para falhas de segurança. Use o recurso **Report a
-vulnerability** do GitHub (aba *Security* → *Advisories*) neste repositório, com:
+Do not open a public issue for security vulnerabilities. Use GitHub's **Report a
+vulnerability** feature (*Security* tab → *Advisories*) in this repository, with:
 
-- versão do OMP Desktop e do OMP (`omp --version`);
-- passos para reproduzir;
-- impacto observado (o que vaza, o que é executado, o que é aprovado sem clique).
+- OMP Desktop and OMP versions (`omp --version`);
+- steps to reproduce;
+- observed impact (what leaks, what executes, what is approved without a click).
 
-Você recebe uma resposta assim que a falha for avaliada.
+You will receive a response as soon as the issue is triaged.
 
-## Escopo
+## Scope
 
-Fazem parte do escopo:
+In scope:
 
-- execução de código no renderer (XSS, HTML de ferramenta, link malicioso);
-- aprovações respondidas sem ação do usuário;
-- leitura de arquivos fora dos projetos abertos (path traversal, symlink, UNC);
-- exposição de tokens, cabeçalhos ou credenciais na interface, nos logs ou no IPC;
-- comandos Git/CLI com injeção de argumentos.
+- code execution in the renderer (XSS, tool HTML, malicious link);
+- approvals answered without user action;
+- reading files outside opened projects (path traversal, symlink, UNC);
+- exposure of tokens, headers, or credentials in the interface, logs, or IPC;
+- Git/CLI commands with argument injection.
 
-## O que o aplicativo já garante
+## What the app already guarantees
 
-- O renderer não tem Node, sistema de arquivos nem shell; só `invoke`/`subscribe`.
-- Todo IPC valida o frame de origem, o schema e a associação com projeto/sessão.
-- O app nunca aprova uma ferramenta sozinho.
-- Nenhum prompt é reenviado automaticamente após queda ou reinício.
-- Credenciais do OMP ficam no perfil dele (`~/.omp`), nunca no repositório.
+- The renderer has no Node, filesystem, or shell; only `invoke`/`subscribe`.
+- Every IPC call validates the origin frame, the schema, and the association with
+  the project/session.
+- The app never approves a tool on its own.
+- No prompt is resent automatically after a crash or restart.
+- OMP credentials stay in its profile (`~/.omp`), never in the repository.
+- Optional Git and Node.js installs use fixed official sources, verify SHA-256,
+  extract safely, never overwrite an existing global tool, and do not modify the
+  persistent PATH or registry.

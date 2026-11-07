@@ -237,6 +237,15 @@ export function previewAppState(withDialogs = false): AppState {
 			ompPath: "C:\\Users\\preview\\.bun\\bin\\omp.exe",
 			ompVersion: "18.16.0",
 			gitVersion: "2.47.1.windows.1",
+			dependencies: {
+				git: {
+					state: "installed",
+					kind: "git",
+					executablePath: "C:\\Program Files\\Git\\cmd\\git.exe",
+					version: "2.47.1",
+				},
+				node: { state: "missing", kind: "node" },
+			},
 			shell: "PowerShell",
 			bunPath: "C:\\Users\\preview\\AppData\\Local\\OMP Desktop\\bun.exe",
 			signed: false,

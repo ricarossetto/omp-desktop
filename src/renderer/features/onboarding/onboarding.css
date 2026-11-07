@@ -356,9 +356,6 @@
 		display: none;
 	}
 	/* A navegação lateral some; o fechamento continua disponível no rodapé. */
-	.onb__foot .onb__skip {
-		display: none;
-	}
 	.onb__foot .onb__close-foot {
 		display: inline-flex;
 	}
@@ -407,6 +404,12 @@
 }
 
 /* Etapa 2: ambiente */
+.onb__env-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+
 .onb-check__icon {
 	color: var(--muted);
 	flex: none;

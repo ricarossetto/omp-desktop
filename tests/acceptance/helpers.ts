@@ -15,7 +15,7 @@ export async function launch(
 	scenario = "stream",
 	extraEnv: Record<string, string> = {},
 	reuse?: { workspace: string; userData: string },
-	options: { noCwd?: boolean; args?: string[] } = {},
+	options: { noCwd?: boolean; args?: string[]; noOmp?: boolean } = {},
 ): Promise<Launched> {
 	const root = mkdtempSync(join(process.env.OMP_DESKTOP_TEST_ROOT ?? tmpdir(), "omp-desktop-acc-"));
 	const workspace = reuse?.workspace ?? join(root, "workspace");
@@ -35,7 +35,9 @@ export async function launch(
 		],
 		env: {
 			...(process.env as Record<string, string>),
-			...(process.env.REAL_OMP ? {} : { OMP_DESKTOP_OMP_PATH: resolve("tests/fixtures/fake-omp.ts") }),
+			...(process.env.REAL_OMP || options.noOmp
+				? {}
+				: { OMP_DESKTOP_OMP_PATH: resolve("tests/fixtures/fake-omp.ts") }),
 			OMP_DESKTOP_TEST: "1",
 			FAKE_OMP_SCENARIO: scenario,
 			...extraEnv,

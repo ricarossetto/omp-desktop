@@ -2,222 +2,268 @@
 
 # OMP Desktop
 
-**O OMP com janela de verdade.** Projetos, sessões, runners, aprovações, Git e terminal em um aplicativo Windows.
+**OMP, now with a window.** Projects, sessions, runners, approvals, Git, and a terminal in one Windows app.
 
 ![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Bun](https://img.shields.io/badge/Bun-1.4-000000?logo=bun&logoColor=white)
-![Versão](https://img.shields.io/badge/vers%C3%A3o-0.3.0-blue)
-![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
-![Idiomas](https://img.shields.io/badge/idiomas-pt--BR%20%7C%20en--US%20%7C%20zh--CN-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Languages](https://img.shields.io/badge/languages-pt--BR%20%7C%20en--US%20%7C%20zh--CN-blue)
 
-[Português (Brasil)](README.md) | [English (US)](docs/README.en-US.md) | [简体中文](docs/README.zh-CN.md)
+[English (US)](README.md) · [Português (Brasil)](docs/README.pt-BR.md) · [简体中文](docs/README.zh-CN.md)
 
-![Conversa com um runner no OMP Desktop](docs/screenshots/conversa-runner.png)
+![OMP Desktop interface in English](docs/screenshots/overview-en-US.png)
 
 </div>
 
 ---
 
-> **Projeto independente e não oficial.** O OMP Desktop não é afiliado, mantido nem endossado pelos autores do oh-my-pi/OMP. É um cliente desktop que conversa com o OMP instalado na sua máquina. O agente, os modelos, as credenciais e as sessões continuam sendo do OMP.
+> **Independent, unofficial project**
+>
+> OMP Desktop is an independent desktop client for [OMP](https://omp.sh) (oh-my-pi). It is not part of the OMP project and is not maintained or endorsed by its authors. The agent, models, credentials, and sessions all come from the OMP installation on your machine.
+>
+> The app does not use OpenCode as its engine, and no OpenCode code or trademark was copied. Third-party components and their copyright notices are listed in [`resources/licenses`](resources/licenses/NOTICE.txt).
 
-## Sumário
+## Contents
 
-- [O que é](#o-que-é)
-- [O que ele não faz](#o-que-ele-não-faz)
-- [Estado do release](#estado-do-release)
-- [Primeiro uso](#primeiro-uso)
-- [Instalação](#instalação)
-- [Funcionalidades](#funcionalidades)
-- [Atalhos](#atalhos)
-- [Idiomas](#idiomas)
-- [Onde ficam os dados](#onde-ficam-os-dados)
-- [Desenvolvimento](#desenvolvimento)
-- [Arquitetura](#arquitetura)
-- [Segurança e privacidade](#segurança-e-privacidade)
-- [Recuperação de erros](#recuperação-de-erros)
-- [Limitações conhecidas](#limitações-conhecidas)
-- [Contribuição](#contribuição)
-- [Licença e componentes de terceiros](#licença-e-componentes-de-terceiros)
+- [What it is](#what-it-is)
+- [What it does not do](#what-it-does-not-do)
+- [Release status](#release-status)
+- [First run](#first-run)
+- [Installation](#installation)
+- [Features](#features)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Languages](#languages)
+- [Where your data lives](#where-your-data-lives)
+- [Development](#development)
+- [Architecture](#architecture)
+- [Security and privacy](#security-and-privacy)
+- [Error recovery](#error-recovery)
+- [Known limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License and third-party components](#license-and-third-party-components)
 
-## O que é
+## What it is
 
-O OMP Desktop é uma interface gráfica para o [OMP](https://omp.sh) (oh-my-pi). Ele **não reimplementa o agente**: cada sessão ativa inicia o próprio `omp --mode rpc-ui`, no diretório do projeto, com o mesmo modelo, as mesmas credenciais, os mesmos presets e as mesmas sessões que você já usa no terminal. O aplicativo conversa com esse processo por RPC e mostra a conversa, os runners, as aprovações e as alterações.
+OMP Desktop is a Windows desktop application that gives OMP a real window. It **does not reimplement the agent**: every active session starts your own `omp --mode rpc-ui` process, in the project directory, with the same model, credentials, presets, and sessions you already use in the terminal. The app talks to that process over RPC and shows the conversation, runners, approvals, and changes.
 
-Na prática, o app é uma janela: o trabalho continua sendo feito pelo OMP que está instalado na sua máquina. O desktop cuida da interface, do ciclo de vida dos processos, do terminal, do painel Git e da organização dos projetos — não do raciocínio do agente.
+In practice, the app is a window: the work is still done by the OMP installed on your machine. The desktop handles the interface, process lifecycle, terminal, Git panel, and project organization — not the agent's reasoning.
 
-### O que ele não faz
+- **Windows x64** desktop app built with **Electron 45**, **React 19**, and **Bun 1.4**.
+- OMP handles the agent's reasoning and tool calls. Git actions, attachment handling, the PTY, and window management run locally in the Electron main process.
+- No data migration: OMP sessions and configuration stay where OMP keeps them (`~/.omp`).
+- First public release: **v0.3.0**. The project is pre-1.0: configuration keys, UI details, and internal contracts may change between releases.
 
-- **Não é outro agente.** Não existe um modelo embutido nem uma segunda implementação do OMP.
-- **Não instala nem atualiza o OMP.** Se o executável não estiver disponível, o diagnóstico permite apontar o `omp.exe` manualmente.
-- **Não aprova nada sozinho.** Comandos, alvos e detalhes ficam visíveis antes de qualquer confirmação.
-- **Não reenvia prompts.** Ao reabrir o app ou depois de uma queda, as abas voltam com o histórico, mas nada é enviado de novo sem uma ação sua.
-- **Não é um fork do OMP.** O projeto é um cliente desktop independente.
+### What it does not do
 
-## Estado do release
+- **It is not another agent.** There is no built-in model and no second implementation of OMP.
+- **It does not install OMP silently.** If OMP is missing on first run, the assistant offers an official installation after an explicit click; nothing is installed when the component mounts. You can also point to an existing `omp.exe` at any time.
+- **It does not approve anything on its own.** Commands, targets, and details are visible before any confirmation.
+- **It does not resend prompts.** When you reopen the app or recover from a crash, tabs return with their history, but nothing is sent again without your action.
+- **It is not a fork of OMP.** This project is an independent desktop client.
 
-A versão atual é **0.3.0**, a primeira versão pública. Baixe em [github.com/ricarossetto/omp-desktop/releases/latest](https://github.com/ricarossetto/omp-desktop/releases/latest) (tag `v0.3.0`).
+## Release status
 
-O instalador é **Windows x64**, por usuário, sem necessidade de administrador e **sem assinatura digital**. Não há atualização automática: para atualizar, baixe o novo instalador e instale por cima. A v0.3.0 é o começo do ciclo público; trate como software em evolução, não como 1.0.
+The current version is **0.3.0**, the first public release. Download it from [github.com/ricarossetto/omp-desktop/releases/latest](https://github.com/ricarossetto/omp-desktop/releases/latest) (tag `v0.3.0`).
 
-## Primeiro uso
+The installer is **Windows x64**, per-user, without administrator rights, and **not digitally signed**. There is no auto-update: to upgrade, download the new installer and install it over the current version. v0.3.0 is the start of the public cycle; treat it as software in progress, not as 1.0.
 
-Na primeira execução, um assistente em cinco passos prepara o ambiente:
+## First run
 
-1. **Boas-vindas** — explica que o app usa o seu OMP, que nada é aprovado sozinho e que as abas voltam sem reenviar prompts. Também avisa que o instalador não é assinado.
-2. **Ambiente** — confere OMP, protocolo RPC, Bun do host, Git e terminal/shell. Nada é instalado automaticamente. Se o OMP não for encontrado, use **Selecionar omp.exe** ou **Abrir diagnóstico**.
-3. **Contas** — mostra o uso que o OMP já conhece, sem exibir tokens. Para adicionar outra conta, abra um projeto e use **Configurações → Contas**; o login só começa com um clique seu.
-4. **Modelo padrão** — lista os modelos anunciados pelo OMP e permite escolher o padrão global. Se a configuração mudar fora do aplicativo, nada é sobrescrito: os valores são recarregados e você escolhe de novo.
-5. **Tema e projeto** — escolhe tema escuro, claro ou igual ao Windows, mostra os atalhos e permite abrir a primeira pasta. Concluir sem abrir uma pasta apenas fecha a introdução; nenhum projeto é criado.
+On first launch, a five-step assistant prepares the environment:
 
-Depois disso, abra uma pasta, crie uma sessão e converse. As configurações ficam na paleta de comandos (`Ctrl+K`) e no ícone de engrenagem.
+1. **Welcome** — explains that the app uses your OMP, that nothing is approved on its own, and that tabs return without resending prompts. It also warns that the installer is unsigned.
+2. **Environment** — checks OMP, the RPC protocol, the host Bun, Git, and the terminal/shell. If OMP is not found, the step offers **Install OMP**: nothing runs until you click **Install OMP**, the installation reports progress (resolving, downloading, verifying, activating) and ends in success or an actionable error, and on success the app detects the real executable and updates diagnostics without restarting, reopening the flow, or losing your draft or language. If installation fails, **Select omp.exe** remains available. The step also shows optional **Git** and **Node.js LTS** actions; neither is required to continue. The install methods are described in [Installing OMP from the app](#installing-omp-from-the-app) and [Installing optional tools](#installing-optional-tools).
+3. **Accounts** — shows the usage OMP already knows, without displaying tokens. To add another account, open a project and use **Settings → Accounts**; login only starts with a click from you.
+4. **Default model** — lists the models announced by OMP and lets you choose the global default. If the configuration changes outside the app, nothing is overwritten: the values are reloaded and you choose again.
+5. **Theme and project** — chooses dark, light, or match Windows, shows the shortcuts, and lets you open your first folder. Finishing without opening a folder only closes the introduction; no project is created.
 
-## Instalação
+After that, open a folder, create a session, and start talking. Settings live in the command palette (`Ctrl+K`) and the gear icon.
 
-| Item | Detalhe |
+## Installation
+
+| Item | Detail |
 | --- | --- |
-| Sistema | Windows x64 |
-| Instalador | `OMP-Desktop-0.3.0-setup.exe` (NSIS, x64) |
-| Escopo | por usuário; não pede administrador |
-| Assinatura | não assinado; o SmartScreen pode avisar |
-| Bun | embutido em `resources/bun/bun.exe` |
-| OMP | não incluído; requer `omp.exe` 18.16+ (validado em 18.16.0) |
-| Git | opcional; necessário apenas para o painel Alterações |
-| Atualização | manual; não há auto-update |
+| System | Windows x64 (Windows 10 or 11) |
+| Installer | `OMP-Desktop-0.3.0-setup.exe` (NSIS, x64) |
+| Scope | per-user; does not request administrator rights |
+| Signature | unsigned; SmartScreen may warn |
+| Bun | bundled at `resources/bun/bun.exe` |
+| OMP | not bundled; first run can install the pinned official Windows x64 binary (18.16.0) after an explicit click, or you can select an existing `omp.exe` |
+| Git | optional; only needed for the Changes panel; the app can install the official MinGit build on request |
+| Node.js | optional; only needed for projects/MCP and the official npm; the app can install the current Node.js LTS on request |
+| Updates | manual; there is no auto-update |
 
-1. Baixe o instalador no [release mais recente](https://github.com/ricarossetto/omp-desktop/releases/latest) (tag `v0.3.0`).
-2. Se o release publicar um SHA256, confira o arquivo antes de executar (veja abaixo).
-3. Execute o instalador. Ele instala na pasta do usuário e não pede elevação.
-4. Abra o OMP Desktop. O assistente confere o ambiente; se o OMP não for encontrado, aponte o `omp.exe`.
-5. Abra uma pasta de projeto e crie a primeira sessão.
+**OMP version support:** The validated baseline is 18.16.0, and the assisted installer pins exactly 18.16.0. The host accepts OMP major version 18 or newer; OMP 17 or older is rejected as incompatible. Versions newer than the 18.x series are accepted but marked as not validated.
 
-O instalador **não inclui o executável do OMP**. Ele inclui o runtime Bun usado pelo serviço local e a dependência `@oh-my-pi/pi-coding-agent` (MIT), que é uma biblioteca do host — o agente continua sendo o `omp.exe` da sua instalação. O Git é opcional: sem ele, o painel Alterações explica a ausência e não simula um repositório; o restante do app continua funcionando.
+1. Download the installer from the [latest release](https://github.com/ricarossetto/omp-desktop/releases/latest) (tag `v0.3.0`).
+2. If the release publishes a SHA-256, verify the file before running it (see below).
+3. Run the installer. It installs into the user folder and does not request elevation.
+4. Open OMP Desktop. The assistant checks the environment. If OMP is not found, choose **Install OMP**, or point to an existing `omp.exe`.
+5. Open a project folder and create your first session.
 
-### SmartScreen e verificação do instalador
+The installer **does not include the OMP executable**. It includes the Bun runtime used by the local service and the `@oh-my-pi/pi-coding-agent` dependency (MIT), which is a host library — the agent remains the `omp.exe` from your installation or from the assisted install. Git and Node.js LTS are not bundled; both are optional and can be installed from the app. Without Git, the Changes panel explains the absence and does not simulate a repository; the rest of the app keeps working.
 
-O instalador não é assinado digitalmente. O Windows pode exibir um aviso do SmartScreen; isso é esperado nesta versão.
+### Installing OMP from the app
 
-- **Não desative** o SmartScreen, o antivírus ou a política de execução do Windows para instalar. Se o aviso impedir, verifique a origem e o hash; não contorne a proteção.
-- Baixe apenas do repositório oficial e confira se o arquivo veio do release esperado.
-- Se o release publicar um SHA256, compare com o resultado de:
+If OMP is missing, the first-run assistant and the diagnostics screen offer **Install OMP**. After an explicit click on **Install OMP**, the app:
+
+- resolves the pinned **18.16.0** Windows binary through the same official build service used by OMP's Windows installer (`build.stencil.so`), for the current architecture (`windows-x86_64` on the x64 build);
+- downloads it over HTTPS to `%LOCALAPPDATA%\omp\omp.exe`, honoring `PI_INSTALL_DIR` like the official installer, without administrator rights;
+- verifies the SHA-256 published by the official service and runs `omp.exe --version`, requiring the exact pinned version before using the file;
+- never overwrites an existing `omp.exe`: a compatible file is adopted, and an incompatible one is reported as a conflict while manual selection remains available.
+
+On first launch without OMP, the app opens Diagnostics directly; the onboarding Environment step shows the same action. The app does not modify the persistent user PATH or the registry: it stores the absolute path in its own runtime state and adds the folder only to the PATH of its own processes (host and terminal). It does not touch `~/.omp`. Concurrent clicks share one installation, and closing the app during installation aborts the download and removes temporary files.
+
+The bundled Bun is only the local host runtime; the OMP binary is standalone, so no global Bun installation is required. The renderer cannot supply a URL or command: the download host, file name, version, and arguments are fixed in the main process. On success, the app applies the detected path and updates onboarding/diagnostics without restarting or losing the draft or language. Network, checksum, version, write, activation, and cancellation errors are shown with a retry path (an activation failure keeps the installed binary), **Check again** re-probes the environment, and **Select omp.exe** remains available.
+
+You can also install OMP manually by following the official instructions at [omp.sh](https://omp.sh) and then choosing **Select omp.exe**; a global Bun is not required for the standalone binary.
+
+### Installing optional tools
+
+Git and Node.js LTS are optional. The app, OMP, and onboarding work without either; Bun is already bundled, and OMP does not require a system Node.js. The Environment step, Diagnostics, and **Settings → General** show the **Optional developer tools** section with the status of Git and Node.js LTS. **Install Git** or **Install Node.js LTS** shows a **Before installing …** confirmation; the download only starts after **Download and install**.
+
+**Git (Changes panel).** The app installs the official Git for Windows [MinGit](https://gitforwindows.org/mingit.html) **2.56.0.windows.4** ZIP (the distribution Git for Windows documents for embedding) into `%LOCALAPPDATA%\omp-desktop\tools\git`, without an installer, administrator rights, winget, or MSI. It verifies the published SHA-256, extracts the ZIP safely, and runs `git.exe --version` before using it. The app adds `...\tools\git\cmd` only to its own process PATH. Manual alternative: [git-scm.com/download/win](https://git-scm.com/download/win).
+
+**Node.js LTS (projects/MCP).** The app installs the **current Node.js LTS resolved from [nodejs.org](https://nodejs.org) at install time** (v26.13.0 at release) from the official Windows ZIP into `%LOCALAPPDATA%\omp-desktop\tools\node`, without an installer or administrator rights, including the official npm and npx. It verifies the SHA-256 from the official `SHASUMS256.txt`, extracts safely, and probes the executable before use. The app adds that folder only to its own process PATH. It does not install project or MCP dependencies; npm is available for you to run them. Manual alternative: [nodejs.org/en/download](https://nodejs.org/en/download).
+
+Both installs are per-user and do not modify the persistent user or system PATH, the registry, or an existing global Git/Node.js installation. A compatible global tool on PATH is detected and adopted as-is; an incompatible or partial managed folder is reported, not overwritten. New terminals and newly spawned host/OMP child processes see the tools; running agents and terminals are not restarted or interrupted, and the next local service start also picks them up. Installations report progress (resolving, downloading, verifying, extracting, activating) and end in success or an actionable error with **Try again**; **Check again** re-probes the environment. After success, the row shows the installed version and location. Concurrent clicks share one installation per tool, and closing the app aborts the download and cleans up temporary files.
+
+The renderer cannot supply a URL, version, command, or folder: sources, versions, destinations, and arguments are fixed in the main process. **Cancel** aborts the download and leaves the existing installation untouched. You can also install Git or Node.js manually from the official pages and use **Check again**.
+
+### SmartScreen and installer verification
+
+The installer is not digitally signed. Windows may show a SmartScreen warning; this is expected in this version.
+
+- **Do not disable** SmartScreen, antivirus, or the Windows execution policy to install. If the warning blocks you, verify the origin and the hash; do not bypass the protection.
+- Download only from the official repository and confirm that the file came from the expected release.
+- If the release publishes a SHA-256, compare it with the output of:
 
 ```powershell
 Get-FileHash .\OMP-Desktop-0.3.0-setup.exe -Algorithm SHA256
 ```
 
-Se o hash não bater, não execute o arquivo.
+If the hash does not match, do not run the file.
 
-### Desinstalação
+### Uninstall
 
-Desinstalar remove o aplicativo. Os dados em `%APPDATA%\omp-desktop` e o perfil `~/.omp` **não são apagados automaticamente**; se quiser removê-los, faça isso manualmente. O instalador não promete limpar tudo.
+Uninstalling removes the application. Data in `%APPDATA%\omp-desktop` and the `~/.omp` profile **are not deleted automatically**; remove them manually if you want to. The uninstaller does not promise to clean everything up. **Do not delete `~/.omp` just to uninstall the desktop app**: that profile belongs to OMP and holds accounts and sessions also used outside this app.
 
-## Funcionalidades
+## Features
 
-### Projetos e sessões
+### Projects and sessions
 
-- Abra qualquer pasta como projeto; os recentes ficam salvos. Pasta ausente aparece como indisponível e pode ser relocalizada. Remover um recente nunca apaga arquivos.
-- A lista de sessões vem do próprio OMP, sem criar uma cópia paralela do histórico.
-- **Uma sessão ativa = um processo OMP próprio**, no diretório do projeto. Trocar de aba não interrompe um agente que está trabalhando.
-- Sessão em uso por outro processo não é tomada à força: o app avisa e oferece abrir outra.
-- Ao reabrir o aplicativo, as abas voltam com a mesma conversa. **Nenhum prompt é reenviado**, nem depois de uma queda.
-- A barra de título tem histórico de sessões (Voltar/Avançar, `Alt+←`/`Alt+→`), busca e alternância de tema. A barra lateral mostra o ramo Git e a contagem de alterações quando o projeto é um repositório.
+- Open any folder as a project; recent projects are saved. A missing folder appears as unavailable and can be relocated. Removing a recent project never deletes files.
+- The session list comes from OMP itself, without creating a parallel copy of the history.
+- **One active session = one OMP process**, in the project directory. Switching tabs does not interrupt an agent that is working.
+- A session in use by another process is not taken by force: the app warns you and offers to open another one.
+- When you reopen the app, tabs return with the same conversation. **No prompt is resent**, even after a crash.
+- The title bar has session history (Back/Forward, `Alt+←`/`Alt+→`), search, and a theme toggle. The sidebar shows the Git branch and the change count when the project is a repository.
 
-### Conversa
+### Conversation
 
-- Markdown com tabelas (GFM), sem HTML cru; blocos de código com botão copiar, raciocínio (thinking) recolhível e imagens. Imagens remotas viram link por causa da CSP; imagens locais e anexos aparecem na conversa.
-- Cards de ferramenta com intenção, argumentos, saída parcial em tempo real, resultado e erro. Resultados muito grandes são paginados na interface e, quando excedem o orçamento de transporte, aparecem com uma marca explícita de omissão — o dado completo continua salvo no OMP.
-- Histórico longo virtualizado, com **“Ir para a resposta”** quando você está lendo mensagens antigas.
-- Enter envia, Shift+Enter quebra linha, composição por IME é respeitada. O rascunho e os anexos só são descartados depois que o OMP confirma o recebimento; se o envio for recusado, eles permanecem.
-- Durante a resposta, você escolhe: **Interromper com orientação** (steer, entregue no próximo passo) ou **Enviar depois** (fila com remover/promover). **Parar** recupera rascunhos e anexos da fila.
-- **Pausar depois do passo atual** espera a ferramenta em curso terminar e devolve o controle sem perder nada; **Continuar** retoma com uma mensagem explícita, sem reenviar a anterior.
-- **Voltar até aqui** e **Ramificar** agem apenas na conversa: nenhum arquivo do projeto é restaurado, apagado ou alterado. O histórico posterior continua na árvore do OMP.
-- Exportação da conversa em HTML pela paleta de comandos.
-- No compositor, `/` abre os comandos que o OMP anuncia; skills, MCP e extensões continuam sendo executados pelo OMP. A paleta (`Ctrl+K`) tem um modo geral e um modo restrito a skills/MCP.
-- Anexos por botão, arrastar e colar imagem. Arquivos de texto entram como bloco delimitado com nome e conteúdo; PDFs e binários viram referência de arquivo, não conteúdo enviado ao modelo. O limite é de **600 KiB por anexo**, porque o prompt inteiro precisa caber em um frame do OMP; o limite do frame é checado antes do envio e nada é truncado silenciosamente.
+- Markdown with tables (GFM), no raw HTML; code blocks with a copy button, collapsible thinking, and images. Remote images become links because of the CSP; local images and attachments appear in the conversation.
+- Tool cards with intent, arguments, partial output in real time, result, and error. Very large results are paginated in the interface and, when they exceed the transport budget, appear with an explicit omission marker — the full data remains stored in OMP.
+- Long history is virtualized, with **Jump to answer** while you are reading older messages.
+- `Enter` sends, `Shift+Enter` inserts a line break, and IME composition is respected. The draft and attachments are discarded only after OMP confirms receipt; if sending is refused, they remain.
+- During a response, you choose: **Interrupt with steering** (delivered on the next step) or **Send after** (a queue with remove/promote). **Stop** recovers drafts and attachments from the queue.
+- **Pause after current step** waits for the running tool to finish and returns control without losing anything; **Continue** resumes with an explicit message, without resending the previous one.
+- **Rewind to here** and **Fork** act only on the conversation: no project file is restored, deleted, or changed. Later history remains in the OMP tree.
+- Conversation export to HTML from the command palette.
+- In the composer, `/` opens the commands OMP announces; skills, MCP, and extensions are still executed by OMP. The palette (`Ctrl+K`) has a general mode and a mode restricted to skills/MCP.
+- Attachments through the button, drag and drop, or pasted image. Text files enter as a delimited block with name and content; PDFs and binaries become file references, not content sent to the model. The limit is **600 KiB per attachment**, because the whole prompt must fit in one OMP frame; the frame limit is checked before sending and nothing is silently truncated.
 
-### Runners, tarefas e objetivo
+### Runners, tasks, and goal
 
-- Painel com cada runner: agente, tarefa, estado e **modelo efetivo**, diferenciado do modelo configurado. Se o OMP não informar o efetivo, aparece “Modelo não informado”.
-- Clique para ler o transcript do runner de forma incremental. Cards finalizados continuam acessíveis **mesmo depois de fechar e reabrir o app**.
-- Cancelar (com confirmação) ou orientar um runner específico; os outros não são afetados.
-- Tarefas (`todo`) com estados bloqueado/abandonado e controle de objetivo (`goal`): criar, pausar, retomar e descartar.
+- A panel shows each runner: agent, task, state, and **effective model**, separate from the configured model. If OMP does not report the effective model, **Model not reported** appears.
+- Click to read the runner transcript incrementally. Completed cards remain accessible **after closing and reopening the app**.
+- Cancel (with confirmation) or steer a specific runner; the others are unaffected.
+- Tasks (`todo`) with blocked/abandoned states and goal control (`goal`): create, pause, resume, and discard.
 
-### Aprovações
+### Approvals
 
-- `select`, `confirm`, `input` (com máscara e opção de revelar), `editor` e `ask` com várias perguntas, multisseleção e resposta livre.
-- **O aplicativo nunca aprova nada sozinho.** Detalhes, alvo e comando ficam visíveis antes da decisão.
-- Cada pedido é respondido uma única vez; cancelar ou deixar o prazo vencer não vira aprovação. Quando o OMP tem timeout próprio para `ask`, a interface avisa que ele pode seguir com as opções recomendadas.
-- Fechar a sessão ou perder o processo cancela o pedido explicitamente. Recarregar a janela não perde uma aprovação pendente.
+- `select`, `confirm`, `input` (masked, with a reveal option), `editor`, and `ask` with multiple questions, multi-select, and a free-form answer.
+- **The app never approves anything on its own.** Details, target, and command are visible before the decision.
+- Each request is answered once; canceling or letting the deadline expire never becomes approval. When OMP has its own timeout for `ask`, the interface warns that it may proceed with the recommended options.
+- Closing the session or losing the process cancels the request explicitly. Reloading the window does not lose a pending approval.
 
-### Modelos, papéis e presets
+### Models, roles, and presets
 
-- Modelo ativo (`set_model`), papéis persistidos (`modelRoles`) e presets (`modelPresets`) aparecem separados. O modelo ativo é da sessão; papéis e presets mostram a camada de origem (global ou projeto) e o valor efetivo.
-- O raciocínio mostra apenas os níveis que o OMP anuncia; se a troca falhar, a escolha anterior é preservada.
-- Aplicar um preset usa o comando `/modelpreset` do próprio OMP. Se a versão não anunciar o comando, o app avisa e mantém o preset atual.
-- A edição tem detecção de conflito: se outra janela ou o terminal mudou o valor, nada é sobrescrito; a tela recarrega e você decide de novo.
+- The active model (`set_model`), persisted roles (`modelRoles`), and presets (`modelPresets`) appear separately. The active model belongs to the session; roles and presets show the origin layer (global or project) and the effective value.
+- Reasoning shows only the levels OMP announces; if the change fails, the previous choice is preserved.
+- Applying a preset uses OMP's own `/modelpreset` command. If the version does not announce the command, the app warns and keeps the current preset.
+- Editing has conflict detection: if another window or the terminal changed the value, nothing is overwritten; the screen reloads and you decide again.
 
-### Contas e cotas
+### Accounts and usage
 
-- Provedores e contas conectadas, com uso por janela informado pelo OMP (por exemplo, 5 h, semanal e mensal, quando o provedor anuncia esses rótulos) via `omp usage --json`.
-- Uso desconhecido aparece como **Indisponível**, nunca como 0%. Custo da sessão é rotulado **“estimado”**, vem de `get_session_stats` e não é débito nem percentual da assinatura.
-- Adicionar conta só depois de clique explícito. O login OAuth acontece no navegador externo; quando o provedor exige entrada interativa, o app mostra um comando para rodar no terminal do aplicativo. Desconectar pede confirmação. Tokens nunca chegam à interface.
-- Busca de contas e provedores dentro da aba.
+- Providers and connected accounts, with usage per window reported by OMP (for example, 5 hours, weekly, and monthly, when the provider announces those labels) through `omp usage --json`.
+- Unknown usage appears as **Unavailable**, never as 0%. Session cost is labeled **estimated**, comes from `get_session_stats`, and is neither a charge nor a percentage of the subscription.
+- Adding an account only after an explicit click. OAuth login happens in the external browser; when the provider requires interactive input, the app shows a command to run in the app terminal. Disconnecting asks for confirmation. Tokens never reach the interface.
+- Search accounts and providers within the tab.
 
-### Alterações e Git
+### Changes and Git
 
-- Status do repositório com renomeações, não rastreados, binários, nomes com Unicode e espaços, e repositório sem commits.
-- Diff **working** e **index** no editor Monaco, local e sem CDN.
-- Stage e unstage por arquivo sem tocar na árvore de trabalho. Commit só com mensagem digitada e clique; falha de hook é exibida e os arquivos ficam intactos.
-- Sem `push`, `reset`, `clean` ou descarte automático. Fora de um repositório, o painel explica e não roda `git init`.
+- Repository status with renames, untracked files, binaries, names with Unicode and spaces, and a repository without commits.
+- **Working** and **index** diffs in the Monaco editor, local and without a CDN.
+- Stage and unstage per file without touching the working tree. Commit only with a typed message and a click; a hook failure is shown and the files remain intact.
+- No `push`, `reset`, `clean`, or automatic discard. Outside a repository, the panel explains the situation and does not run `git init`.
+- Git is optional. If it is missing, the panel explains the absence; the optional install action is available in Diagnostics and **Settings → General**. No repository is simulated.
 
-### Terminal integrado
+### Integrated terminal
 
-- PTY real via node-pty (ConPTY no Windows) com xterm: PowerShell quando disponível, depois `pwsh`, por último `cmd.exe`. Resize e `Ctrl+C` funcionam, a pasta é a do projeto e a saída não é enviada ao modelo automaticamente.
+- A real PTY through node-pty (ConPTY on Windows) with xterm: PowerShell when available, then `pwsh`, and finally `cmd.exe`. Resize and `Ctrl+C` work, the working directory is the project folder, and output is not sent to the model automatically.
 
-### Interface, tema e idiomas
+### Interface, theme, and languages
 
-- Tema escuro, claro ou igual ao Windows; painéis redimensionáveis e persistidos.
-- Abaixo de 1000 px, a barra lateral e o painel direito viram gavetas; a conversa nunca fica espremida.
-- Foco visível, navegação por teclado, rótulos acessíveis e respeito a `prefers-reduced-motion`.
-- Português (Brasil), English (US) e 简体中文. O aplicativo segue o idioma do Windows na primeira execução; a escolha fica em **Configurações → Geral → Idioma**. Identificadores, comandos, caminhos e nomes de modelo não são traduzidos.
+- Dark, light, or match Windows theme; resizable panels with persisted sizes.
+- Below 1000 px, the sidebar and the right panel become drawers; the conversation is never squeezed.
+- Visible focus, keyboard navigation, accessible labels, and respect for `prefers-reduced-motion`.
+- Portuguese (Brazil), English (US), and Simplified Chinese. The app follows the Windows language on first run; the choice lives in **Settings → General → Language**. Identifiers, commands, paths, and model names are not translated.
 
-### Acessibilidade e qualidade
+### Accessibility and quality
 
-A interface foi construída com foco visível, navegação por teclado, rótulos acessíveis e respeito a movimento reduzido. A aceitação automatizada inclui verificações com axe-core, mas **relatórios automatizados têm limites**: eles não substituem testes com leitores de tela nem validação com pessoas usuárias. O projeto não declara conformidade WCAG e não afirma que a interface foi testada com leitores de tela.
+The interface was built with visible focus, keyboard navigation, accessible labels, and respect for reduced motion. Automated acceptance includes axe-core checks, but **automated reports have limits**: they do not replace testing with screen readers or validation with users. The project does not claim WCAG conformance and does not claim that the interface has been tested with screen readers.
 
-## Atalhos
+## Keyboard shortcuts
 
-| Atalho | Ação |
+| Shortcut | Action |
 | --- | --- |
-| `Ctrl+K` | Paleta de comandos e busca de sessões |
-| `Ctrl+M` | Seletor de modelo e raciocínio |
-| `Ctrl+Shift+P` | Abrir projeto |
-| `Ctrl+N` | Nova sessão |
-| `Ctrl+B` | Alternar barra lateral |
-| ``Ctrl+` `` | Abrir ou fechar o terminal |
-| `Alt+←` / `Alt+→` | Voltar/avançar no histórico de sessões |
-| `Esc` | Fecha paleta, seletor de modelo ou configurações; com uma aprovação aberta, cancela o pedido (nunca aprova); sem nada aberto e fora de um campo de texto, interrompe o agente |
-| `Ctrl+Enter` | Envia no editor de diálogo (Enter quebra linha) |
-| `Enter` / `Shift+Enter` | Envia / quebra linha no compositor |
+| `Ctrl+K` | Command palette and session search |
+| `Ctrl+M` | Model and reasoning selector |
+| `Ctrl+Shift+P` | Open project |
+| `Ctrl+N` | New session |
+| `Ctrl+B` | Toggle sidebar |
+| ``Ctrl+` `` | Open or close the terminal |
+| `Alt+←` / `Alt+→` | Back/forward through session history |
+| `Esc` | Closes the palette, model selector, or settings; with an approval open, cancels the request (never approves); with nothing open and outside a text field, stops the agent |
+| `Ctrl+Enter` | Sends in the dialog editor (`Enter` inserts a line break) |
+| `Enter` / `Shift+Enter` | Send / insert a line break in the composer |
 
-## Idiomas
+The `Ctrl+K` palette has two groups: the app's own actions and the OMP commands. The `/` palette in the composer lists the skills, MCP, and extension commands announced by OMP; all of them are executed by OMP.
 
-O aplicativo fala português (Brasil), inglês (US) e chinês simplificado. Datas e números seguem o idioma escolhido. Comandos, identificadores, caminhos e nomes de modelo permanecem como o OMP os anuncia.
+## Languages
 
-## Onde ficam os dados
+The app speaks Portuguese (Brazil), English (US), and Simplified Chinese. Dates and numbers follow the chosen language. Commands, identifiers, paths, and model names remain as OMP announces them.
 
-| Local | O que fica lá |
+## Where your data lives
+
+| Location | What lives there |
 | --- | --- |
-| `%APPDATA%\omp-desktop` | Estado do desktop: projetos recentes, abas, layout, tema, janela, anexos, logs e a subpasta `host-data` do serviço local |
-| `~/.omp` | Perfil do OMP: configuração, credenciais, sessões, presets e perfis |
-| Pasta do projeto | Arquivos do projeto e o repositório Git, quando existir |
+| `%APPDATA%\omp-desktop` | Desktop state: recent projects, tabs, layout, theme, window, attachments, logs, and the `host-data` subfolder of the local service |
+| `%LOCALAPPDATA%\omp-desktop\tools\git` | Managed Git installed by the app (optional) |
+| `%LOCALAPPDATA%\omp-desktop\tools\node` | Managed Node.js LTS and npm installed by the app (optional) |
+| `~/.omp` | OMP profile: configuration, credentials, sessions, presets, and profiles |
+| Project folder | Project files and the Git repository, when one exists |
 
-O aplicativo não copia credenciais para o projeto nem para o repositório. Ao abrir issues, PRs ou capturas, **não inclua** arquivos de credenciais, logs pessoais, caminhos com nome de usuário, e-mails ou IDs de conta.
+The app does not copy credentials into the project or the repository. When opening issues, PRs, or screenshots, **do not include** credential files, personal logs, paths containing a username, emails, or account IDs.
 
-## Desenvolvimento
+## Development
 
-Requisitos: Windows x64, Bun 1.4+ e Node.js disponível para o passo de download do Electron. O OMP precisa estar instalado para testar o app de verdade; Git é opcional.
+Requirements: Windows x64, Bun 1.4+, and Node.js available for the Electron download step. OMP must be installed to test the app for real; Git is optional.
+
+The Node.js used to download Electron is a development requirement. It is separate from the optional Node.js LTS that the app can install for projects/MCP; the app does not require a system Node.js to run.
 
 ```powershell
 git clone https://github.com/ricarossetto/omp-desktop.git C:\dev\omp-desktop
@@ -227,19 +273,19 @@ node node_modules/electron/install.js
 bun run dev
 ```
 
-| Comando | O que faz |
+| Command | What it does |
 | --- | --- |
-| `bun run dev` | Compila o host e abre o app em modo desenvolvimento |
-| `bun run build` | Gera `out/` (main, preload, renderer e host) |
-| `bun run start` | Abre o Electron a partir do build |
-| `bun run build:host` | Compila somente o host Bun |
-| `bun run typecheck` | Checagem de tipos |
-| `bun run test` | Testes unitários |
-| `bun run test:acceptance` | Build + aceitação em Electron real com o OMP de teste (`tests/fixtures/fake-omp.ts`), sem gastar cota |
-| `bun run dist:win` | Gera o instalador NSIS x64 em `release/` |
-| `bun run smoke:installed -- --exe "<caminho>\OMP Desktop.exe" --cwd "<pasta>"` | Inicia o app instalado, fora do checkout, com `userData` temporário |
+| `bun run dev` | Builds the host and opens the app in development mode |
+| `bun run build` | Generates `out/` (main, preload, renderer, and host) |
+| `bun run start` | Opens Electron from the build |
+| `bun run build:host` | Builds only the Bun host |
+| `bun run typecheck` | Type check |
+| `bun run test` | Unit tests |
+| `bun run test:acceptance` | Build + acceptance in real Electron with the test OMP (`tests/fixtures/fake-omp.ts`), without spending quota |
+| `bun run dist:win` | Generates the NSIS x64 installer in `release/` |
+| `bun run smoke:installed -- --exe "<path>\OMP Desktop.exe" --cwd "<folder>"` | Starts the installed app outside the checkout, with a temporary `userData` |
 
-O smoke real usa o OMP de verdade e **consome cota** (um prompt com runner). Rode conscientemente:
+The real smoke test uses the real OMP and **consumes quota** (one prompt with a runner). Run it deliberately:
 
 ```powershell
 $env:REAL_OMP = "1"
@@ -247,101 +293,109 @@ bunx playwright test real-smoke
 Remove-Item Env:REAL_OMP
 ```
 
-O teste de aceitação normal usa o OMP de teste e não gasta cota. O smoke real não deve ser executado em CI público sem controle de credenciais e cota.
+The normal acceptance test uses the test OMP and does not spend quota. The real smoke test should not run in public CI without credential and quota control.
 
-Como o projeto fixa `@oh-my-pi/pi-coding-agent` em 18.16.0, ao rodar com Bun o `node_modules/.bin` pode entrar no PATH e um shim local do OMP pode prevalecer sobre o `omp` global. Para apontar o OMP do sistema, use `OMP_DESKTOP_OMP_PATH` ou selecione o `omp.exe` no diagnóstico. A baseline do projeto é 18.16.0; versões mais antigas que 18.16 geram aviso.
+Because the project pins `@oh-my-pi/pi-coding-agent` at 18.16.0, when running with Bun the `node_modules/.bin` can enter `PATH` and a local OMP shim may take precedence over the global `omp`. To point to the system OMP, use `OMP_DESKTOP_OMP_PATH` or select `omp.exe` in diagnostics. The project baseline is 18.16.0; versions newer than the 18.x series are marked as not validated.
 
-## Arquitetura
+Automated checks cover repeatable behavior only and do not replace manual verification in a real environment. Before submitting a change, run at least the type check, unit tests, and acceptance tests; for UI changes, attach a screenshot of the real window.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-  R["Renderer<br/>React 19, sem Node"] -- "window.ompDesktop<br/>invoke / subscribe" --> M["Electron main<br/>IPC validado, PTY, Git, arquivos"]
-  M -- "JSONL privado" --> H["Host Bun<br/>sessões, runners, anexos, config"]
-  H -- "rpc-ui" --> O1["omp (sessão A)"]
-  H -- "rpc-ui" --> O2["omp (sessão B)"]
+  R["Renderer<br/>React 19, no Node"] -- "window.ompDesktop<br/>invoke / subscribe" --> M["Electron main<br/>validated IPC, PTY, Git, files"]
+  M -- "private JSONL" --> H["Bun host<br/>sessions, runners, attachments, config"]
+  H -- "rpc-ui" --> O1["omp (session A)"]
+  H -- "rpc-ui" --> O2["omp (session B)"]
 ```
 
 ```text
 src/
-  main/       janela, IPC, PTY, Git, arquivos e ciclo do host
-  host/       serviço Bun: transporte RPC, sessões, runners, anexos, config
-  renderer/   React 19: telas, conversa, painéis e diálogos
-  shared/     contratos zod e reducer de sessão
-scripts/      build do host, instalador e smoke do app instalado
-tests/        unitários, aceitação com OMP de teste e smoke real
-resources/    ícone e avisos de licenças
-docs/         capturas e documentação
-design/       brief visual e de interação
+  main/       window, IPC, PTY, Git, files, and host lifecycle
+  host/       Bun service: RPC transport, sessions, runners, attachments, config
+  renderer/   React 19: screens, conversation, panels, and dialogs
+  preload/    the only bridge exposed to the renderer
+  shared/     zod contracts and session reducer
+scripts/      host build, installer, and installed-app smoke
+tests/        unit tests, acceptance with test OMP, and real smoke
+resources/    icon and license notices
+docs/         screenshots and documentation
+design/       visual and interaction brief
 ```
 
-Os contratos ficam em `src/shared/contracts.ts`; o reducer puro `applyEvent` em `src/shared/session-state.ts` é usado pelo host e pelo renderer. Telas, estados e tokens estão em [`design/opendesign-brief.md`](design/opendesign-brief.md).
+The contracts live in `src/shared/contracts.ts`; the pure reducer `applyEvent` in `src/shared/session-state.ts` is used by both the host and the renderer. Screens, states, and tokens are in [`design/opendesign-brief.md`](design/opendesign-brief.md).
 
-O renderer não tem Node, sistema de arquivos nem shell; só `invoke` e `subscribe`. O main fala com o host por JSONL privado, e o host mantém um processo `omp --mode rpc-ui` por sessão ativa, com `--resume <sessionPath>` ao reabrir e `--profile` quando aplicável. O protocolo v2 é negociado quando disponível; o frame padrão é de 1 MB e os anexos ficam limitados a 600 KiB para caber no prompt.
+The renderer has no Node, filesystem, or shell; only `invoke` and `subscribe`. Main talks to the host over private JSONL, and the host keeps one `omp --mode rpc-ui` process per active session, with `--resume <sessionPath>` when reopening and `--profile` when applicable. Protocol v2 is negotiated when available; the default frame is 1 MB and attachments are limited to 600 KiB to fit in the prompt.
 
-### Escopo das configurações
+### Configuration scopes
 
-| Escopo | O que é | Como o app mexe |
+| Scope | What it is | How the app changes it |
 | --- | --- | --- |
-| Sessão | Modelo ativo e nível de raciocínio | Via RPC (`set_model`, `set_thinking_level`); não altera papéis persistidos |
-| Projeto | `modelRoles` do projeto | Nesta versão, edita somente `modelRoles`; outros overrides são exibidos, mas não sobrescritos |
-| Global | Camada global do perfil OMP; `modelRoles` e `modelPresets` | Via CLI do OMP (`omp config set`), com validação de esquema e detecção de conflito |
+| Session | Active model and reasoning level | Through RPC (`set_model`, `set_thinking_level`); does not change persisted roles |
+| Project | Project `modelRoles` | In this version, edits only `modelRoles`; other overrides are displayed but not overwritten |
+| Global | Global OMP profile layer; `modelRoles` and `modelPresets` | Through the OMP CLI (`omp config set`), with schema validation and conflict detection |
 
-## Segurança e privacidade
+## Security and privacy
 
-- Renderer isolado (`contextIsolation`, `sandbox`, sem Node, sem webview, CSP local). Só `invoke` e `subscribe` são expostos.
-- Todo IPC valida o frame de origem, o schema e a associação com projeto, sessão, terminal e anexo.
-- Caminhos são sempre relativos ao projeto, com `realpath`, e recusam `..`, UNC, streams alternativos e links para fora.
-- Arquivos só abrem fora do app por lista de extensões inofensivas; scripts e executáveis apenas aparecem na pasta.
-- Dados enviados à interface e logs não carregam tokens, cabeçalhos de autenticação nem `providerPayload`. Os logs redigem chaves e valores com aparência de segredo.
-- Processos são encerrados apenas pela árvore de PIDs que o app iniciou, nunca por nome.
-- O aplicativo não tem telemetria própria; o tráfego de rede é o do OMP e dos provedores que você configurou.
+- Isolated renderer (`contextIsolation`, `sandbox`, no Node, no webview, local CSP). Only `invoke` and `subscribe` are exposed.
+- Every IPC call validates the origin frame, the schema, and the association with the project, session, terminal, and attachment.
+- Paths are always relative to the project, resolved with `realpath`, and reject `..`, UNC paths, alternate data streams, and links pointing outside.
+- Files open outside the app only through an allowlist of harmless extensions; scripts and executables are only shown in the folder.
+- Data sent to the interface and logs do not carry tokens, authentication headers, or `providerPayload`. Logs redact keys and values that look like secrets.
+- Processes are terminated only by the PID tree the app started, never by name.
+- The app has no telemetry of its own; network traffic is that of OMP and the providers you configured, plus the official OMP build service and the official Git/Node.js sources when you choose those install actions.
+- The OMP installation offered on first run uses the official Windows binary from the official build service, pinned to 18.16.0, verifies the published SHA-256 and `omp.exe --version`, writes only to `%LOCALAPPDATA%\omp` (or `PI_INSTALL_DIR`), and never overwrites an existing file; the renderer cannot supply a URL or command.
+- Optional Git and Node.js installs use fixed official sources, verify SHA-256, extract safely, never overwrite an existing global tool, and do not modify the persistent PATH or registry; only the app process PATH is extended.
 
-**Limite importante:** a redação protege campos de transporte e logs, mas **não é uma promessa de apagar conteúdo sensível que você digitar na conversa**. Texto, argumentos de ferramenta e resultados são preservados literalmente para o agente e podem ficar no transcript do OMP. Não cole segredos no chat; se colar, remova o histórico conforme as ferramentas do OMP e revogue a credencial. O aplicativo não consegue garantir a remoção do que já foi gravado pelo OMP.
+**Important limit:** redaction protects transport fields and logs, but **it is not a promise to erase sensitive content you type into the conversation**. Text, tool arguments, and results are preserved literally for the agent and may remain in the OMP transcript. Do not paste secrets into the chat; if you do, remove the history using OMP's tools and revoke the credential. The app cannot guarantee removal of what OMP has already recorded.
 
-A auditoria de dependências e o processo de release estão descritos em [`docs/release-security.md`](docs/release-security.md). Para reportar uma falha, siga o [`SECURITY.md`](SECURITY.md) — não abra issue pública.
+Dependency auditing and the release process are described in [`docs/release-security.md`](docs/release-security.md). To report a vulnerability, follow [`SECURITY.md`](SECURITY.md) — do not open a public issue.
 
-## Recuperação de erros
+## Error recovery
 
-| Situação | O que acontece |
+| Situation | What happens |
 | --- | --- |
-| OMP não encontrado | O diagnóstico mostra o estado e permite selecionar o `omp.exe`; nada é instalado automaticamente |
-| OMP mais antigo que 18.16 | Não é suportado. A abertura da sessão pode ser recusada pelo host; atualize o OMP antes de continuar |
-| OMP cai durante a sessão | A sessão é marcada como interrompida, o transcript é preservado e nenhum prompt é reenviado; o rascunho pode ser recuperado |
-| Serviço local falha | O diagnóstico mostra `host-failed`; as abas persistidas continuam salvas e reabrem sem prompt quando o serviço volta |
-| Configuração mudou fora do app | A gravação detecta o conflito, recarrega os valores e não sobrescreve nada |
-| Sessão em uso por outro processo | O app avisa e não abre à força; feche o outro processo ou escolha outra sessão |
-| Git ausente | O painel Alterações explica que o Git não está no PATH; o restante do app funciona |
-| Pasta não é um repositório | O painel explica e não roda `git init`; se quiser versionar, use o terminal conscientemente |
-| Commit recusado por hook | O erro é exibido e os arquivos permanecem intactos |
-| Instalador não assinado | O SmartScreen pode avisar; verifique origem e SHA256 e não desative a segurança |
-| Desinstalação | O aplicativo é removido; `%APPDATA%\omp-desktop` e `~/.omp` permanecem |
+| OMP not found | The diagnostics screen shows the state and offers **Install OMP** (official pinned binary after an explicit click) and **Select omp.exe**; nothing is installed silently, and a failed install keeps manual selection available for retry |
+| OMP 17 or older | Rejected as incompatible. Use **Install OMP** or update OMP before continuing |
+| OMP crashes during the session | The session is marked as interrupted, the transcript is preserved, and no prompt is resent; the draft can be recovered |
+| Local service fails | Diagnostics shows `host-failed`; persisted tabs remain saved and reopen without a prompt when the service returns |
+| Configuration changed outside the app | Saving detects the conflict, reloads the values, and overwrites nothing |
+| Session in use by another process | The app warns and does not open it by force; close the other process or choose another session |
+| Git missing | The Changes panel explains that Git is not on `PATH`; the optional install action is available in Diagnostics and **Settings → General**. The rest of the app works |
+| Node.js missing | Projects or MCP that need Node.js/npm are unavailable until it is installed; the optional install action is available in Diagnostics and **Settings → General**. The app and OMP work without it |
+| Optional tool install fails | A localized error with retry is shown; nothing is overwritten, and a manual install remains possible |
+| Folder is not a repository | The panel explains and does not run `git init`; to version it, use the terminal deliberately |
+| Commit refused by a hook | The error is displayed and the files remain intact |
+| Unsigned installer | SmartScreen may warn; verify the origin and SHA-256 and do not disable security |
+| Uninstall | The application is removed; `%APPDATA%\omp-desktop` and `~/.omp` remain |
 
-## Limitações conhecidas
+## Known limitations
 
-- **Somente Windows x64.** Não há instalador para macOS ou Linux.
-- **Sem atualização automática.** Baixe o novo instalador e instale por cima.
-- **Sem OMP automático.** O app não instala nem atualiza o OMP; você precisa ter um `omp.exe` compatível (18.16+; validado em 18.16.0).
-- **Sem seletor de modo de permissão próprio.** O app mostra as aprovações que o OMP envia e não inventa níveis de permissão que o RPC não anuncia.
-- **Git sem `push`, `reset`, `clean` ou descarte.** O painel cobre status, diff, stage, unstage e commit.
-- **Instalador não assinado.** O SmartScreen pode avisar; não há certificado de code signing nesta versão.
-- **Anexos limitados a 600 KiB por arquivo** e ao frame padrão de 1 MB do OMP.
-- **Sem declaração de conformidade WCAG** e sem teste documentado com leitores de tela ou pessoas usuárias. As verificações automatizadas têm limites.
-- **v0.3.0 é a primeira versão pública.** Algumas arestas são esperadas; não trate como 1.0.
+- **Windows x64 only.** There are no macOS or Linux builds.
+- **No auto-update.** Download the new installer and install it over the current version.
+- **OMP is not bundled.** The first-run assistant can install the pinned official Windows binary (18.16.0) after an explicit click, but it does not update OMP silently; a compatible `omp.exe` (major version 18 or newer; validated at 18.16.0) is required.
+- **No permission-mode selector of its own.** The app shows the approvals OMP sends and does not invent permission levels the RPC does not announce.
+- **Git and Node.js LTS are optional and not bundled.** The app can install official builds on request, but it does not update them silently; a compatible global installation is detected and used as-is.
+- **Git without `push`, `reset`, `clean`, or discard.** The panel covers status, diff, stage, unstage, and commit.
+- **Unsigned installer.** SmartScreen may warn; there is no code-signing certificate in this version.
+- **Attachments limited to 600 KiB per file** and to OMP's default 1 MB frame.
+- **No WCAG conformance claim** and no documented testing with screen readers or users. Automated checks have limits.
+- **v0.3.0 is the first public release.** Some rough edges are expected; do not treat it as 1.0.
 
-## Contribuição
+## Contributing
 
-Leia o [`CONTRIBUTING.md`](CONTRIBUTING.md) antes de abrir uma issue ou PR. Em resumo:
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening an issue or PR. In short:
 
-- Rode `bun run typecheck`, `bun run test` e `bun run test:acceptance` antes de enviar.
-- Descreva o sistema (Windows x64), a versão do app e a versão do OMP (`omp --version`).
-- Uma mudança por PR, com o motivo no título. Se mudar a interface, anexe uma captura da janela real.
-- Não inclua dados pessoais (caminhos com nome de usuário, e-mails, tokens) em capturas, fixtures ou logs.
-- Para falhas de segurança, use o [`SECURITY.md`](SECURITY.md), não uma issue pública.
+- Run `bun run typecheck`, `bun run test`, and `bun run test:acceptance` before submitting.
+- Describe the system (Windows x64), the app version, and the OMP version (`omp --version`).
+- One change per PR, with the reason in the title. If you change the interface, attach a screenshot of the real window.
+- Do not include personal data (paths containing a username, emails, tokens) in screenshots, fixtures, or logs.
+- For security issues, use [`SECURITY.md`](SECURITY.md), not a public issue.
 
-## Licença e componentes de terceiros
+## License and third-party components
 
-O OMP Desktop é distribuído sob a licença **MIT**. Veja [`LICENSE`](LICENSE).
+OMP Desktop is distributed under the **MIT** license. See [`LICENSE`](LICENSE).
 
-Avisos de terceiros ficam em [`resources/licenses/NOTICE.txt`](resources/licenses/NOTICE.txt). Entre os componentes distribuídos estão `@oh-my-pi/pi-coding-agent`, zod, `@lydell/node-pty`, React, React DOM, react-markdown, remark-gfm, xterm, Monaco, Electron e electron-builder, todos com suas licenças preservadas. O runtime Bun é incluído no instalador como `resources/bun/bun.exe`; o executável do OMP **não** é redistribuído.
+Third-party notices are in [`resources/licenses/NOTICE.txt`](resources/licenses/NOTICE.txt). Distributed components include `@oh-my-pi/pi-coding-agent`, zod, `@lydell/node-pty`, React, React DOM, react-markdown, remark-gfm, xterm, Monaco, and Electron, all with their licenses preserved. The build uses electron-builder. The Bun runtime is included in the installer as `resources/bun/bun.exe`; the OMP executable is **not** redistributed.
 
-Referências de arquitetura e UX de projetos de código aberto foram estudadas; nenhum código proprietário foi copiado. Componentes MIT mantêm seus avisos de copyright.
+Architecture and UX references from open-source projects were studied; no proprietary code was copied. MIT components keep their copyright notices.

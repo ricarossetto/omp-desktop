@@ -1,5 +1,6 @@
 import type {
 	AttachmentDto,
+	DependencyRuntimeSnapshot,
 	DesktopEvent,
 	RpcCommandInput,
 	RuntimeStatus,
@@ -22,6 +23,7 @@ import {
 } from "../features/conversation/composer-policy";
 import { clearDialogsForLostSession, unsupportedDialogMethod } from "./dialog-state";
 import { errorDetail } from "../features/errors/error-messages";
+import { installErrorKey } from "../features/diagnostics/install-errors";
 import { classifySessionEvent } from "./event-disposition";
 import {
 	parseEditorText,
@@ -56,6 +58,9 @@ export interface AppActions {
 	refreshRuntime(): Promise<void>;
 	retryRuntime(): Promise<void>;
 	selectOmp(): Promise<void>;
+	installOmp(): Promise<void>;
+	/** Mescla um snapshot de Git/Node vindo da seção de ferramentas opcionais. */
+	applyDependencies(snapshot: DependencyRuntimeSnapshot): void;
 	loadWorkspaces(): Promise<void>;
 	pickWorkspace(): Promise<void>;
 	removeWorkspace(workspaceId: string): Promise<void>;
@@ -511,6 +516,8 @@ export function createAppStore(): AppStore {
 					}
 				}
 				patch({ runtime: status, runtimeError: null });
+				// O main também emite status depois de adicionar o projeto inicial
+				// (`--cwd`); recarregar a lista a cada status mantém esse caso.
 				void loadWorkspaces();
 				if (status.phase === "ready" && hostRestartPending) {
 					hostRestartPending = false;
@@ -918,6 +925,37 @@ export function createAppStore(): AppStore {
 			} catch (error) {
 				notify("error", t("store.selectOmpFailed", { detail: detailOf(error) }));
 			}
+		},
+
+		async installOmp() {
+			try {
+				const status = await invoke<RuntimeStatus>({ op: "runtime.installOmp" });
+				if (status && typeof status === "object" && typeof status.phase === "string") {
+					patch({ runtime: status, runtimeError: null });
+					if (status.install?.state === "error") {
+						notify(
+							"error",
+							t(installErrorKey(status.install.code), { message: status.install.message }),
+						);
+					}
+				} else {
+					await actions.refreshRuntime();
+				}
+				await actions.loadWorkspaces();
+				const workspace = activeWorkspace(state);
+				if (state.runtime?.phase === "ready" && workspace?.available) {
+					await openWorkspace(workspace.workspaceId);
+				}
+			} catch (error) {
+				notify("error", t("store.installOmpFailed", { detail: detailOf(error) }));
+			}
+		},
+
+		applyDependencies(snapshot) {
+			set((current) => {
+				if (!current.runtime) return current;
+				return { ...current, runtime: { ...current.runtime, dependencies: snapshot } };
+			});
 		},
 
 		loadWorkspaces,

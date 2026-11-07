@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { DesktopEvent, DesktopRequest, RuntimeStatus, WorkspaceDto } from "../../src/shared/contracts";
+import { desktopRequestSchema } from "../../src/shared/contracts";
 import { AttachmentRegistry, SessionRegistry, WorkspaceRegistry } from "../../src/main/registries";
 
 const productionFileUrl = "file:///C:/app/out/renderer/index.html";
@@ -52,6 +53,7 @@ afterAll(async () => {
 function createBridge() {
 	sent.length = 0;
 	closedTerminals.length = 0;
+	const dependencyCalls: string[] = [];
 	const workspaces = new WorkspaceRegistry();
 	workspaces.add(workspace);
 	const sessions = new SessionRegistry();
@@ -74,6 +76,7 @@ function createBridge() {
 			closedTerminals.push(terminalId);
 			return true;
 		},
+		create: async () => terminalInfo,
 		list: () => [terminalInfo],
 		hasActive: () => true,
 		closeAll: async () => undefined,
@@ -89,7 +92,7 @@ function createBridge() {
 	const bridge = new MainBridge({
 		getWindow: () => win as never,
 		authorizedUrls: () => ({ productionFileUrl }),
-		runtime: {} as never,
+		runtime: { resolveShell: async () => "cmd.exe" } as never,
 		uiState: {} as never,
 		workspaces,
 		sessions,
@@ -104,12 +107,33 @@ function createBridge() {
 		getStatus: () => status,
 		awaitRuntimeStatus: async () => status,
 		restartHost: async () => undefined,
+		installOmp: async () => status,
+		dependencies: async () => {
+			dependencyCalls.push("dependencies");
+			return {
+				git: { state: "missing", kind: "git" },
+				node: { state: "missing", kind: "node" },
+			};
+		},
+		installDependency: async (kind) => {
+			dependencyCalls.push(`install:${kind}`);
+			return {
+				git: { state: "missing", kind: "git" },
+				node: { state: "missing", kind: "node" },
+			};
+		},
+		prepareOptionalToolEnv: () => {
+			dependencyCalls.push("prepare");
+		},
 		log: () => undefined,
 		isSmokeMode: () => false,
 	});
+	// Seam de teste: `dispatch` é privado; o teste exercita a validação de
+	// schema e o roteamento do handler IPC sem subir o Electron.
+	type DispatchSeam = { dispatch(request: DesktopRequest): Promise<unknown> };
 	const dispatch = (request: DesktopRequest) =>
-		(bridge as unknown as { dispatch(request: DesktopRequest): Promise<unknown> }).dispatch(request);
-	return { bridge, dispatch, workspaces, sessions, attachments };
+		(bridge as unknown as DispatchSeam).dispatch(request);
+	return { bridge, dispatch, workspaces, sessions, attachments, dependencyCalls };
 }
 
 describe("MainBridge terminal", () => {
@@ -176,5 +200,39 @@ describe("MainBridge limpeza de workspace", () => {
 			sequence: 10,
 			data: { status: "error", error: "O serviço local encerrou." },
 		});
+	});
+});
+
+describe("MainBridge ferramentas opcionais", () => {
+	test("runtime.dependencies devolve o snapshot sem instalar", async () => {
+		const { dispatch, dependencyCalls } = createBridge();
+		await expect(dispatch({ op: "runtime.dependencies" })).resolves.toEqual({
+			git: { state: "missing", kind: "git" },
+			node: { state: "missing", kind: "node" },
+		});
+		expect(dependencyCalls).toEqual(["dependencies"]);
+	});
+
+	test("runtime.installDependency encaminha apenas o kind fixo", async () => {
+		const { dispatch, dependencyCalls } = createBridge();
+		await expect(
+			dispatch({ op: "runtime.installDependency", dependency: "node" }),
+		).resolves.toBeTruthy();
+		expect(dependencyCalls).toEqual(["install:node"]);
+
+		// O schema é a fronteira do IPC: o renderer não escolhe URL/comando e
+		// não consegue pedir uma ferramenta fora de git/node.
+		expect(
+			desktopRequestSchema.safeParse({ op: "runtime.installDependency", dependency: "bun" }).success,
+		).toBe(false);
+		expect(
+			desktopRequestSchema.safeParse({ op: "runtime.installDependency", dependency: "git" }).success,
+		).toBe(true);
+	});
+
+	test("terminal.create prepara o PATH gerenciado antes do PTY", async () => {
+		const { dispatch, dependencyCalls } = createBridge();
+		await expect(dispatch({ op: "terminal.create", workspaceId: "ws1" })).resolves.toBeTruthy();
+		expect(dependencyCalls).toEqual(["prepare"]);
 	});
 });

@@ -1,16 +1,18 @@
-# Como contribuir
+# Contributing
 
-Obrigado pelo interesse. Este projeto é um aplicativo desktop independente para o
-[OMP](https://omp.sh); ele não faz parte do OMP e não é mantido pelos autores dele.
+Thanks for your interest. This project is an independent desktop application for
+[OMP](https://omp.sh); it is not part of OMP and is not maintained by its authors.
 
-## Antes de abrir uma issue
+## Before opening an issue
 
-- Rode `bun run typecheck`, `bun test tests/unit` e `bunx playwright test` para
-  confirmar que o problema não é local.
-- Descreva o sistema (Windows x64), a versão do app e a do OMP (`omp --version`).
-- Para falhas de segurança, siga o [SECURITY.md](SECURITY.md) em vez de abrir issue.
+- Run `bun run typecheck`, `bun test tests/unit`, and `bunx playwright test` to
+  confirm the problem is not local.
+- Describe the system (Windows x64), the app version, and the OMP version
+  (`omp --version`).
+- For security issues, follow [SECURITY.md](SECURITY.md) instead of opening an
+  issue.
 
-## Ambiente
+## Environment
 
 ```powershell
 bun install --ignore-scripts
@@ -18,30 +20,35 @@ node node_modules/electron/install.js
 bun run dev
 ```
 
-Requisitos: Windows x64, Bun 1.4+ e OMP instalado. O Git só é necessário para o
-painel Alterações.
+Requirements: Windows x64, Bun 1.4+, and OMP installed. Git is only needed for
+the Changes panel.
 
-## Padrões
+Node.js is required for the Electron download step in development. It is separate
+from the optional Node.js LTS that the app can install for projects/MCP; the app
+does not require a system Node.js to run.
 
-- **Idioma do código**: identificadores em inglês; comentários e mensagens de
-  interface em português do Brasil, com as três traduções (`src/renderer/i18n`).
-- **Contratos**: `src/shared/contracts.ts` e `src/shared/session-types.ts` são
-  compartilhados entre main, host e renderer. Mudou um, ajuste os três lados.
-- **Regras do produto** (não quebrar):
-  1. o app nunca aprova nada sozinho;
-  2. Parar fica sempre visível enquanto o agente trabalha;
-  3. valor desconhecido aparece como "Indisponível", nunca 0%;
-  4. custo é sempre "estimado" e vem de `get_session_stats`;
-  5. runner mostra modelo efetivo e configurado separados;
-  6. estados nunca dependem só de cor;
-  7. nenhum prompt é reenviado automaticamente.
-- **Testes**: comportamento relevante ganha teste. Use o OMP de teste
-  (`tests/fixtures/fake-omp.ts`) na aceitação; não gaste cota em teste automatizado.
+## Conventions
+
+- **Code language**: identifiers in English; comments and interface messages in
+  Brazilian Portuguese, with the three translations (`src/renderer/i18n`).
+- **Contracts**: `src/shared/contracts.ts` and `src/shared/session-types.ts` are
+  shared by main, host, and renderer. If you change one, update all three sides.
+- **Product rules** (do not break):
+  1. the app never approves anything on its own;
+  2. Stop is always visible while the agent is working;
+  3. unknown values appear as "Unavailable", never 0%;
+  4. cost is always "estimated" and comes from `get_session_stats`;
+  5. the runner shows the effective and configured models separately;
+  6. states never rely on color alone;
+  7. no prompt is ever resent automatically.
+- **Tests**: relevant behavior gets a test. Use the test OMP
+  (`tests/fixtures/fake-omp.ts`) in acceptance; do not spend quota in automated
+  tests.
 
 ## Pull requests
 
-1. Uma mudança por PR, com o motivo no título.
-2. `bun run typecheck`, `bun test tests/unit` e `bunx playwright test` verdes.
-3. Se mudar a interface, anexe uma captura da janela real.
-4. Não inclua dados pessoais (caminhos com nome de usuário, e-mails, tokens) em
-   capturas, fixtures ou logs.
+1. One change per PR, with the reason in the title.
+2. `bun run typecheck`, `bun test tests/unit`, and `bunx playwright test` green.
+3. If you change the interface, attach a screenshot of the real window.
+4. Do not include personal data (paths containing a username, emails, tokens) in
+   screenshots, fixtures, or logs.

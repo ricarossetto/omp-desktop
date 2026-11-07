@@ -2,34 +2,56 @@
 
 ## 0.3.0 — 2026-11-07
 
-Primeiro release público do OMP Desktop para Windows x64. Projeto independente, sem vínculo oficial com os autores do OMP.
+First public release of OMP Desktop for Windows x64. Independent project, not
+affiliated with the OMP authors.
 
-### Interface e uso
+### Interface and usage
 
-- Interface Bancada com barra de título, histórico de navegação, painéis redimensionáveis, temas claro e escuro e gavetas em janelas estreitas.
-- Português brasileiro, inglês dos EUA e chinês simplificado, com idioma persistido.
-- Assistente inicial em cinco etapas: apresentação, ambiente, contas, modelo padrão e primeiro projeto.
-- Busca de contas e provedores. `Esc` limpa uma busca preenchida; com a busca vazia, fecha Configurações.
-- Paleta geral separada da lista de skills e comandos MCP.
-- Fila de mensagens, orientação durante o trabalho e pausa depois da ferramenta atual, com retomada explícita.
+- Bancada interface with a custom title bar, navigation history, resizable
+  panels, light and dark themes, and drawers in narrow windows.
+- Brazilian Portuguese, US English, and Simplified Chinese, with persisted
+  language.
+- Five-step first-run assistant: welcome, environment, accounts, default model,
+  and first project.
+- Account and provider search. `Esc` clears a filled search; with an empty
+  search, it closes Settings.
+- General palette separated from the skills and MCP command list.
+- Message queue, steering during work, and pause after the current tool, with
+  explicit resume.
+- Optional Git and Node.js LTS setup from the app, with explicit confirmation,
+  official sources, SHA-256 verification, per-user managed folders, no
+  administrator rights, no overwrite of global tools, and no persistent
+  PATH/registry changes; new terminals and OMP child processes see the tools
+  without restarting running agents.
 
-### Correções
+### Fixes
 
-- Rolagem de históricos longos sem loop de atualização do React.
-- Restauração de sessões e conversas sem reenviar prompts.
-- Estado de trabalho coerente com o processo OMP e botão Parar disponível durante a execução.
-- Aprovações com resposta única; cancelamento, timeout e fechamento nunca aprovam ações.
-- Salvamento de configurações sem falsos conflitos entre valores globais e de projeto.
-- Catálogo vazio e falha de cotas no assistente inicial sem consultas em loop.
-- Uso desconhecido exibido como indisponível; custo da sessão separado das cotas da assinatura.
-- Contraste do estado do terminal e troca de tema sem interpolação de fundo incompatível com a cor do texto dos botões.
-- Limite de anexos de 600 KiB compatível com o transporte.
-- DOMPurify 3.4.17 aplicado à dependência e à cópia interna utilizada pelo Monaco.
+- Scrolling long histories without a React update loop.
+- Restoring sessions and conversations without resending prompts.
+- Work state consistent with the OMP process, with the Stop button available
+  during execution.
+- Approvals answered once; cancellation, timeout, and closing never approve
+  actions.
+- Saving settings without false conflicts between global and project values.
+- Empty catalog and quota failure in the first-run assistant without polling
+  loops.
+- Unknown usage shown as unavailable; session cost kept separate from
+  subscription quotas.
+- Terminal state contrast and theme switching without background interpolation
+  that is incompatible with button text color.
+- The 600 KiB attachment limit matches the transport.
+- DOMPurify 3.4.17 applied to the dependency and to the internal copy used by
+  Monaco.
 
-### Distribuição
+### Distribution
 
-- READMEs completos em três idiomas, avisos de terceiros e análise de dependências em [docs/release-security.md](docs/release-security.md).
-- Instalador NSIS por usuário, com Bun embutido. O executável OMP continua sendo instalado separadamente.
-- SHA-256 publicado junto do instalador. Sem assinatura digital e sem atualização automática.
+- Complete READMEs in three languages, third-party notices, and dependency
+  analysis in [docs/release-security.md](docs/release-security.md).
+- Per-user NSIS installer with bundled Bun. The OMP executable is not bundled;
+  the first-run assistant can install the pinned official Windows binary
+  (18.16.0) after an explicit click, verifying SHA-256 and `--version` without
+  overwriting an existing file.
+- SHA-256 published next to the installer. No digital signature and no
+  automatic update.
 
-![Interface do OMP Desktop](docs/screenshots/conversa-runner.png)
+![OMP Desktop interface](docs/screenshots/conversa-runner.png)

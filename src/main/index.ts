@@ -18,12 +18,31 @@ import {
 import { access, appendFile, mkdir, rename, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import type { DesktopEvent, RuntimeStatus, WorkspaceDto } from "../shared/contracts";
+import type {
+	DependencyKind,
+	DependencyRuntimeSnapshot,
+	DependencyRuntimeState,
+} from "../shared/dependency-install-types";
 import { buildHostEnv, HostClient, HostClientError, redactLogLine } from "./host-client";
+import { mergeDependencyProbe } from "./dependency-state";
+import {
+	DependencyInstallError,
+	OptionalDependencyInstaller,
+	optionalDependencyBinDirs,
+} from "./dependency-install";
 import { MainBridge } from "./ipc";
 import { isAllowedRendererUrl, rendererFileUrl, validateDevRendererUrl } from "./ipc-guard";
 import { readJsonFile, writeJsonAtomic } from "./json-store";
 import { assertWorkspaceDirectory } from "./paths";
 import { AttachmentRegistry, SessionRegistry, WorkspaceRegistry } from "./registries";
+import {
+	OmpInstaller,
+	OmpInstallError,
+	OmpInstallService,
+	OMP_INSTALL_VERSION,
+	ompInstallTarget,
+	resolveOmpInstallDir,
+} from "./omp-install";
 import { isOmpVersionCompatible, RuntimeResolver } from "./runtime";
 import { sanitizeForRenderer } from "./sanitize";
 import { TerminalManager, terminalPids } from "./terminal";
@@ -80,6 +99,23 @@ let initialCwdConsumed = false;
 let hostStatusSequence = 0;
 let selectedOmpPath: string | undefined;
 let runtimeStatus: RuntimeStatus = { phase: "starting-host", signed: false };
+let installService: OmpInstallService | null = null;
+let installPromise: Promise<RuntimeStatus> | null = null;
+let lastInstallProgressAt = 0;
+let dependencyInstaller: OptionalDependencyInstaller | null = null;
+/** Último snapshot conhecido; ausente até a primeira sondagem do main. */
+let dependencyStates: DependencyRuntimeSnapshot | null = null;
+let dependencyProbePromise: Promise<DependencyRuntimeSnapshot> | null = null;
+const dependencyInstallPromises = new Map<DependencyKind, Promise<DependencyRuntimeSnapshot>>();
+let lastDependencyProgressAt = 0;
+/**
+ * Geração por ferramenta: qualquer mudança autoritativa de estado (início,
+ * progresso, conclusão, erro) invalida uma sondagem que começou antes. Sem
+ * isso, um probe lento poderia sobrescrever `installed` com `missing` antigo.
+ */
+const dependencyGenerations: Record<DependencyKind, number> = { git: 0, node: 0 };
+let runtimeRefreshPromise: Promise<RuntimeStatus> | null = null;
+let lastRuntimeProbeAt = 0;
 let savedWindowState: StoredWindowState | null = null;
 let windowStateTimer: ReturnType<typeof setTimeout> | undefined;
 const busySessions = new Set<string>();
@@ -307,7 +343,12 @@ function adoptResolvedOmpPath(): void {
 }
 
 function hasActiveWork(): boolean {
-	return terminals.hasActive() || busySessions.size > 0;
+	return (
+		terminals.hasActive() ||
+		busySessions.size > 0 ||
+		(installService?.installing ?? false) ||
+		(dependencyInstaller?.hasActiveWork() ?? false)
+	);
 }
 
 /** Leitura não estreitada pelo fluxo local (o host muda após awaits). */
@@ -327,6 +368,7 @@ function buildSmokeReport(): Record<string, unknown> {
 		ompVersion: runtimeStatus.ompVersion ?? null,
 		bunPath: runtimeStatus.bunPath ?? null,
 		gitVersion: runtimeStatus.gitVersion ?? null,
+		dependencies: runtimeStatus.dependencies ?? null,
 		shell: runtimeStatus.shell ?? null,
 		pids: {
 			electron: process.pid,
@@ -700,6 +742,10 @@ async function startHost(): Promise<void> {
 			return;
 		}
 	}
+	// Antes do host nascer: os diretórios gerenciados entram no PATH do processo
+	// mesmo que ainda não existam, para que instalações futuras sejam vistas por
+	// este host e pelos terminais sem reiniciar nada.
+	preseedOptionalToolPaths();
 	const env = buildHostEnv();
 	if (selectedOmpPath) env.OMP_DESKTOP_OMP_PATH = selectedOmpPath;
 	// Mantém workspaces/abas do host dentro do userData do app (isolado em testes).
@@ -784,19 +830,338 @@ async function restartHost(ompPath?: string): Promise<void> {
 	}
 }
 
+/**
+ * O binário instalado fica disponível para o host e para os terminais do
+ * aplicativo sem alterar o PATH persistente do usuário (nenhuma escrita no
+ * registro); o caminho absoluto é o que o aplicativo persiste.
+ */
+function prependProcessPath(dir: string): void {
+	const normalized = path.resolve(dir);
+	const current = process.env.PATH ?? "";
+	const entries = current.length > 0 ? current.split(path.delimiter) : [];
+	const alreadyPresent = entries.some((entry) => {
+		const resolved = path.resolve(entry);
+		return process.platform === "win32"
+			? resolved.toLowerCase() === normalized.toLowerCase()
+			: resolved === normalized;
+	});
+	if (alreadyPresent) return;
+	process.env.PATH = current.length > 0 ? `${normalized}${path.delimiter}${current}` : normalized;
+}
+
+/**
+ * Diretórios gerenciados entram no PATH APENAS deste processo (e dos filhos
+ * que ele criar), antes de host/PTY nascerem. Nada é gravado no registro ou
+ * no PATH persistente do usuário; os diretórios podem ainda não existir.
+ */
+function preseedOptionalToolPaths(): void {
+	for (const dir of optionalDependencyBinDirs(process.env)) prependProcessPath(dir);
+}
+
+function dependencyFallback(): DependencyRuntimeSnapshot {
+	return {
+		git: { state: "missing", kind: "git" },
+		node: { state: "missing", kind: "node" },
+	};
+}
+
+/**
+ * Sonda Git e Node no main. Uma instalação em andamento não é sobrescrita por
+ * uma sondagem concorrente; o estado `installing` volta a `installed` quando o
+ * próprio instalador conclui e atualiza o snapshot.
+ */
+async function probeDependencies(): Promise<DependencyRuntimeSnapshot> {
+	if (!dependencyInstaller) {
+		throw new HostClientError("INTERNAL", "O instalador de ferramentas opcionais não foi inicializado.");
+	}
+	if (dependencyProbePromise) return dependencyProbePromise;
+	const installer = dependencyInstaller;
+	const run = (async (): Promise<DependencyRuntimeSnapshot> => {
+		const generations = { ...dependencyGenerations };
+		const [git, node] = await Promise.all([installer.probe("git"), installer.probe("node")]);
+		const next: DependencyRuntimeSnapshot = {
+			git: mergeDependencyProbe(
+				"git",
+				git,
+				dependencyStates?.git,
+				generations.git,
+				dependencyGenerations.git,
+			),
+			node: mergeDependencyProbe(
+				"node",
+				node,
+				dependencyStates?.node,
+				generations.node,
+				dependencyGenerations.node,
+			),
+		};
+		dependencyStates = next;
+		return next;
+	})();
+	dependencyProbePromise = run;
+	try {
+		return await run;
+	} finally {
+		if (dependencyProbePromise === run) dependencyProbePromise = null;
+	}
+}
+
+function setDependencyState(kind: DependencyKind, state: DependencyRuntimeState): void {
+	dependencyGenerations[kind] += 1;
+	dependencyStates = { ...(dependencyStates ?? dependencyFallback()), [kind]: state };
+	setStatus({ dependencies: dependencyStates });
+}
+
+/**
+ * Instalação iniciada por clique explícito. Single-flight por ferramenta no
+ * main (cliques repetidos compartilham a mesma execução); Git e Node podem
+ * instalar em paralelo. Nunca reinicia o host nem interrompe sessões: o novo
+ * diretório só entra no PATH deste processo para os próximos terminais/filhos.
+ */
+async function installDependency(kind: DependencyKind): Promise<DependencyRuntimeSnapshot> {
+	if (shuttingDown) {
+		throw new HostClientError("HOST_EXITED", "O aplicativo está encerrando; a instalação não foi iniciada.");
+	}
+	if (!dependencyInstaller) {
+		throw new HostClientError("INTERNAL", "O instalador de ferramentas opcionais não foi inicializado.");
+	}
+	const running = dependencyInstallPromises.get(kind);
+	if (running) return running;
+	if (!dependencyStates) await probeDependencies();
+	const installer = dependencyInstaller;
+	const run = (async (): Promise<DependencyRuntimeSnapshot> => {
+		setDependencyState(kind, { state: "installing", kind, phase: "resolving" });
+		try {
+			const result = await installer.install(kind, {
+				onProgress: (progress) => {
+					const now = Date.now();
+					// O download emite por bloco; 250 ms basta para a barra e evita
+					// inundar o IPC com eventos de status.
+					if (progress.phase === "downloading" && now - lastDependencyProgressAt < 250) return;
+					lastDependencyProgressAt = now;
+					setDependencyState(kind, { state: "installing", kind, ...progress });
+				},
+			});
+			preseedOptionalToolPaths();
+			setDependencyState(kind, {
+				state: "installed",
+				kind,
+				executablePath: result.executablePath,
+				version: result.version,
+			});
+			log("info", "dependency.instalada", { kind, version: result.version });
+		} catch (error) {
+			const code = error instanceof DependencyInstallError ? error.code : "INTERNAL";
+			const message = error instanceof Error ? error.message : String(error);
+			if (!shuttingDown) {
+				setDependencyState(kind, { state: "error", kind, code, message });
+				log("error", "dependency.instalacao_falhou", { kind, code, message });
+			}
+		}
+		return dependencyStates ?? dependencyFallback();
+	})();
+	dependencyInstallPromises.set(kind, run);
+	void run
+		.finally(() => {
+			if (dependencyInstallPromises.get(kind) === run) dependencyInstallPromises.delete(kind);
+		})
+		.catch(() => undefined);
+	return run;
+}
+
+function createOmpInstaller(signal: AbortSignal): OmpInstaller {
+	return new OmpInstaller({
+		installDir: resolveOmpInstallDir(process.env),
+		version: OMP_INSTALL_VERSION,
+		target: ompInstallTarget(),
+		signal,
+		probe: (ompPath, options) => runtime.probeOmpPath(ompPath, options),
+		onProgress: (progress) => {
+			const now = Date.now();
+			// O download emite por bloco; 250 ms é suficiente para a barra e
+			// evita inundar o IPC com eventos de status.
+			if (progress.phase === "downloading" && now - lastInstallProgressAt < 250) return;
+			lastInstallProgressAt = now;
+			setStatus({ install: { state: "installing", ...progress } });
+		},
+		log,
+	});
+}
+
+/**
+ * Reinicia o host com o binário recém-instalado e confirma que ele ficou
+ * pronto. Devolve `undefined` em sucesso ou um detalhe técnico da falha.
+ * Uma falha de ativação nunca remove o binário válido já gravado.
+ */
+async function activateOmp(ompPath: string): Promise<string | undefined> {
+	let phase: RuntimeStatus["phase"] = runtimeStatus.phase;
+	if (phase === "ready") return undefined;
+	try {
+		await restartHost(ompPath);
+	} catch (error) {
+		log("error", "omp.reinicio_pos_instalacao_falhou", { message: (error as Error).message });
+		return "restart-failed";
+	}
+	// O host pode levar alguns instantes para confirmar o status; não declara
+	// falha só porque a fase ainda é `starting-host`.
+	const deadline = Date.now() + 5000;
+	phase = runtimeStatus.phase;
+	while (phase === "starting-host" && Date.now() < deadline) {
+		await delayUnref(200);
+		phase = runtimeStatus.phase;
+	}
+	if (phase === "ready") return undefined;
+	return `phase=${phase}`;
+}
+
+/**
+ * Uma falha de ativação mantém o binário válido e reporta um estado acionável
+ * no diagnóstico. Se o host ficou preso em `starting-host`, a fase vira
+ * `host-failed` para a tela de diagnóstico aparecer em vez de um loading sem
+ * saída; o evento posterior do host ainda pode promover para `ready`.
+ */
+function reportActivationFailure(ompPath: string, ompVersion: string | undefined, detail: string): void {
+	setStatus({
+		...(runtimeStatus.phase === "starting-host"
+			? { phase: "host-failed" as const, message: undefined }
+			: {}),
+		ompPath,
+		ompVersion,
+		install: { state: "error", code: "ACTIVATION_FAILED", message: detail },
+	});
+	log("error", "omp.ativacao_falhou", { ompPath, detail });
+}
+
+/**
+ * Instalação iniciada por clique explícito no renderer. Single-flight no main:
+ * chamadas concorrentes compartilham a mesma execução e o mesmo reinício do
+ * host, sem duplicar download nem sobrescrever um OMP já existente.
+ */
+async function installOmp(): Promise<RuntimeStatus> {
+	if (shuttingDown) {
+		throw new HostClientError("HOST_EXITED", "O aplicativo está encerrando; a instalação não foi iniciada.");
+	}
+	if (installPromise) return installPromise;
+	const run = (async (): Promise<RuntimeStatus> => {
+		if (!installService) {
+			throw new HostClientError("INTERNAL", "O instalador do OMP não foi inicializado.");
+		}
+		setStatus({ install: { state: "installing", phase: "resolving" } });
+		try {
+			// Um OMP compatível já existente (inclusive instalado fora do app)
+			// é adotado; nada é baixado nem substituído.
+			const existing = await runtime.resolveOmp();
+			if (existing.compatible && existing.ompPath) {
+				const ompVersion = existing.ompVersion ?? "";
+				selectedOmpPath = existing.ompPath;
+				const activation = await activateOmp(existing.ompPath);
+				if (activation) {
+					reportActivationFailure(existing.ompPath, existing.ompVersion, activation);
+					return runtimeStatus;
+				}
+				setStatus({
+					ompPath: existing.ompPath,
+					ompVersion: existing.ompVersion,
+					install: { state: "success", ompPath: existing.ompPath, ompVersion },
+				});
+				return runtimeStatus;
+			}
+			const result = await installService.install();
+			await runtime.saveOmpPath(result.ompPath);
+			runtime.invalidate();
+			selectedOmpPath = result.ompPath;
+			prependProcessPath(result.installDir);
+			const activation = await activateOmp(result.ompPath);
+			if (activation) {
+				reportActivationFailure(result.ompPath, result.ompVersion, activation);
+				return runtimeStatus;
+			}
+			setStatus({
+				ompPath: result.ompPath,
+				ompVersion: result.ompVersion,
+				install: { state: "success", ompPath: result.ompPath, ompVersion: result.ompVersion },
+			});
+			return runtimeStatus;
+		} catch (error) {
+			const code = error instanceof OmpInstallError ? error.code : "INTERNAL";
+			const message = error instanceof Error ? error.message : String(error);
+			if (!shuttingDown) {
+				setStatus({ install: { state: "error", code, message } });
+				log("error", "omp.instalacao_falhou", { code, message });
+			}
+			return runtimeStatus;
+		}
+	})();
+	installPromise = run;
+	void run
+		.finally(() => {
+			if (installPromise === run) installPromise = null;
+		})
+		.catch(() => undefined);
+	return run;
+}
+
+/**
+ * Reconsulta o ambiente quando o app ainda não está pronto. É o que faz
+ * “Verificar novamente” e a atualização periódica do diagnóstico enxergarem
+ * um OMP instalado fora do aplicativo, sem exigir reiniciar a janela.
+ */
+async function refreshRuntimeStatus(): Promise<RuntimeStatus> {
+	if (runtimeRefreshPromise) return runtimeRefreshPromise;
+	const run = (async (): Promise<RuntimeStatus> => {
+		if (shuttingDown) return runtimeStatus;
+		if (
+			runtimeStatus.phase === "ready" ||
+			runtimeStatus.phase === "starting-host" ||
+			installPromise ||
+			restartingHost
+		) {
+			return runtimeStatus;
+		}
+		const now = Date.now();
+		if (now - lastRuntimeProbeAt < 2000) return runtimeStatus;
+		lastRuntimeProbeAt = now;
+		runtime.invalidate();
+		try {
+			const probe = await runtime.buildStatus(true);
+			if (probe.phase === "starting-host" && probe.ompPath) {
+				await restartHost(probe.ompPath);
+				return runtimeStatus;
+			}
+			runtimeStatus = { ...probe, install: runtimeStatus.install };
+			emitStatus();
+		} catch (error) {
+			log("error", "runtime.reprobe_falhou", { message: (error as Error).message });
+		}
+		return runtimeStatus;
+	})();
+	runtimeRefreshPromise = run;
+	void run
+		.finally(() => {
+			if (runtimeRefreshPromise === run) runtimeRefreshPromise = null;
+		})
+		.catch(() => undefined);
+	return run;
+}
+
 async function promptAndShutdown(): Promise<void> {
 	if (shuttingDown || promptInFlight) return;
 	promptInFlight = true;
 	try {
 		const win = mainWindow;
 		if (hasActiveWork() && !smokeReportPath && win && !win.isDestroyed()) {
-			log("info", "app.confirmar_encerramento", { busy: busySessions.size, terminals: terminals.hasActive() });
+			log("info", "app.confirmar_encerramento", {
+				busy: busySessions.size,
+				terminals: terminals.hasActive(),
+				installing: installService?.installing ?? false,
+				installingOptional: dependencyInstaller?.hasActiveWork() ?? false,
+			});
 			const result = await dialog.showMessageBox(win, {
 				type: "warning",
 				title: "Trabalho ativo",
 				message: "Há trabalho ativo neste aplicativo.",
 				detail:
-					"Encerrar agora interrompe terminais e sessões em andamento. Os históricos já gravados pelo OMP são preservados e nenhum prompt será reenviado ao reabrir.",
+					"Encerrar agora interrompe terminais, sessões em andamento e uma instalação do OMP em curso. Os históricos já gravados pelo OMP são preservados e nenhum prompt será reenviado ao reabrir.",
 				buttons: ["Continuar trabalhando", "Encerrar mesmo assim"],
 				defaultId: 0,
 				cancelId: 0,
@@ -806,6 +1171,28 @@ async function promptAndShutdown(): Promise<void> {
 		}
 		shuttingDown = true;
 		log("info", "app.encerrando");
+		// Aborta download/verificação e espera a limpeza do temporário; nenhum
+		// processo de instalação fica órfão depois do fechamento.
+		installService?.cancel();
+		if (installPromise) {
+			await Promise.race([
+				installPromise.then(
+					() => undefined,
+					() => undefined,
+				),
+				delayUnref(5000),
+			]);
+		}
+		// Mesmo tratamento para Git/Node: aborta downloads e espera a limpeza do
+		// temporário; nenhum processo de instalação fica órfão após o fechamento.
+		dependencyInstaller?.cancel();
+		const activeDependencyInstalls = [...dependencyInstallPromises.values()];
+		if (activeDependencyInstalls.length > 0) {
+			await Promise.race([
+				Promise.allSettled(activeDependencyInstalls).then(() => undefined),
+				delayUnref(5000),
+			]);
+		}
 		await saveWindowState();
 		await terminals.closeAll().catch((error: unknown) => {
 			log("warn", "terminal.encerrar_falhou", { message: (error as Error).message });
@@ -863,13 +1250,19 @@ async function bootstrap(): Promise<void> {
 		return saved;
 	};
 	savedWindowState = await readJsonFile<StoredWindowState | null>(windowStateFile, null);
+	dependencyInstaller = new OptionalDependencyInstaller({ env: process.env });
+	// Os diretórios gerenciados entram no PATH antes da primeira sondagem e do
+	// primeiro host/PTY; ainda podem não existir, e nada é persistido.
+	preseedOptionalToolPaths();
 	runtime = new RuntimeResolver({
 		userDataDir,
 		appPath: repoRoot,
 		resourcesPath: process.resourcesPath,
 		isPackaged: app.isPackaged,
 		execPath: process.execPath,
+		probeDependencies: () => probeDependencies(),
 	});
+	installService = new OmpInstallService(createOmpInstaller);
 
 	terminals = new TerminalManager({
 		onData: (info, data) => bridge.onTerminalData(info, data),
@@ -898,9 +1291,13 @@ async function bootstrap(): Promise<void> {
 		awaitRuntimeStatus: async () => {
 			await Promise.race([statusReady.promise, delayUnref(5000)]);
 			await Promise.race([bootSettled.promise, delayUnref(15_000)]);
-			return runtimeStatus;
+			return refreshRuntimeStatus();
 		},
 		restartHost,
+		installOmp,
+		dependencies: () => probeDependencies(),
+		installDependency,
+		prepareOptionalToolEnv: preseedOptionalToolPaths,
 		log,
 		isSmokeMode: () => Boolean(smokeReportPath),
 		markSessionBusy: (sessionId) => busySessions.add(sessionId),

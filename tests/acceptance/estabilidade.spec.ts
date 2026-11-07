@@ -2,16 +2,17 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { launch, quit } from "./helpers";
+import { launch, quit, type Launched } from "./helpers";
 
-async function openSessionWithoutWorkspaceClick(l: Awaited<ReturnType<typeof launch>>) {
-	await l.page.getByRole("button", { name: "Criar sessão" }).click();
+async function openSessionWithoutWorkspaceClick(l: Launched) {
+	// Em janelas estreitas a barra lateral vira gaveta e o botão visível é "Nova sessão".
+	await l.page.getByRole("button", { name: "Nova sessão" }).first().click();
 	const box = l.page.locator("textarea").first();
 	await expect(box).toBeVisible({ timeout: 30_000 });
 	return box;
 }
 
-async function openSession(l: Awaited<ReturnType<typeof launch>>) {
+async function openSession(l: Launched) {
 	await l.page.getByText("workspace", { exact: true }).first().click();
 	await l.page.getByRole("button", { name: "Criar sessão" }).click();
 	const box = l.page.locator("textarea").first();

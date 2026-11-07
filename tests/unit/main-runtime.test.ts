@@ -145,3 +145,56 @@ describe("geometria da janela", () => {
 		expect(restored.bounds.height).toBe(700);
 	});
 });
+
+describe("dependências opcionais no status", () => {
+	test("gitVersion vem do snapshot, não de uma segunda sondagem do PATH", async () => {
+		const dir = await mkdtemp(path.join(tmpdir(), "omp-runtime-deps-"));
+		const fixture = path.join(dir, "omp-fixture.ts");
+		await writeFile(fixture, 'console.log("omp/18.16.0");\n');
+		const dependencies = {
+			git: {
+				state: "installed" as const,
+				kind: "git" as const,
+				executablePath: "C:\\tools\\git\\cmd\\git.exe",
+				version: "2.56.0",
+			},
+			node: { state: "missing" as const, kind: "node" as const },
+		};
+		const resolver = new RuntimeResolver({
+			userDataDir: dir,
+			appPath: dir,
+			resourcesPath: dir,
+			isPackaged: false,
+			execPath: "bun",
+			env: { ...process.env, OMP_DESKTOP_OMP_PATH: fixture },
+			probeDependencies: async () => dependencies,
+		});
+		const status = await resolver.buildStatus(true);
+		expect(status.dependencies).toEqual(dependencies);
+		expect(status.gitVersion).toBe("2.56.0");
+		expect(status.phase).not.toBe("omp-missing");
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	test("git ausente no snapshot zera o campo legado mesmo com Git no PATH", async () => {
+		const dir = await mkdtemp(path.join(tmpdir(), "omp-runtime-deps-"));
+		const fixture = path.join(dir, "omp-fixture.ts");
+		await writeFile(fixture, 'console.log("omp/18.16.0");\n');
+		const resolver = new RuntimeResolver({
+			userDataDir: dir,
+			appPath: dir,
+			resourcesPath: dir,
+			isPackaged: false,
+			execPath: "bun",
+			env: { ...process.env, OMP_DESKTOP_OMP_PATH: fixture },
+			probeDependencies: async () => ({
+				git: { state: "missing", kind: "git" },
+				node: { state: "missing", kind: "node" },
+			}),
+		});
+		const status = await resolver.buildStatus(true);
+		expect(status.dependencies?.git.state).toBe("missing");
+		expect(status.gitVersion).toBeUndefined();
+		await rm(dir, { recursive: true, force: true });
+	});
+});

@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { access, constants } from "node:fs/promises";
 import * as path from "node:path";
 import type { RuntimeStatus } from "../shared/contracts";
+import type { DependencyRuntimeSnapshot } from "../shared/dependency-install-types";
 import { readJsonFile, writeJsonAtomic } from "./json-store";
 
 export const OMP_BASELINE_VERSION = "18.16.0";
@@ -43,31 +44,32 @@ interface ExecOutcome {
 function execFileCaptured(
 	file: string,
 	args: string[],
-	options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+	options: { env?: NodeJS.ProcessEnv; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<ExecOutcome> {
-	return new Promise((resolve) => {
-		const settle = (error: (Error & { code?: number | string }) | null, stdout: string, stderr: string) => {
-			const code =
-				error && typeof error.code === "number" ? error.code : error ? -1 : 0;
-			resolve({ stdout: stdout ?? "", stderr: stderr ?? "", code });
-		};
-		try {
-			execFile(
-				file,
-				args,
-				{
-					env: options.env ?? process.env,
-					windowsHide: true,
-					timeout: options.timeoutMs ?? 5000,
-					maxBuffer: 1_048_576,
-					encoding: "utf8",
-				},
-				(error, stdout, stderr) => settle(error, stdout ?? "", stderr ?? ""),
-			);
-		} catch (error) {
-			settle(error as Error, "", (error as Error).message);
-		}
-	});
+	const { promise, resolve } = Promise.withResolvers<ExecOutcome>();
+	const settle = (error: (Error & { code?: number | string }) | null, stdout: string, stderr: string) => {
+		const code =
+			error && typeof error.code === "number" ? error.code : error ? -1 : 0;
+		resolve({ stdout: stdout ?? "", stderr: stderr ?? "", code });
+	};
+	try {
+		execFile(
+			file,
+			args,
+			{
+				env: options.env ?? process.env,
+				windowsHide: true,
+				timeout: options.timeoutMs ?? 5000,
+				maxBuffer: 1_048_576,
+				encoding: "utf8",
+				...(options.signal ? { signal: options.signal } : {}),
+			},
+			(error, stdout, stderr) => settle(error, stdout ?? "", stderr ?? ""),
+		);
+	} catch (error) {
+		settle(error as Error, "", (error as Error).message);
+	}
+	return promise;
 }
 
 export function parseOmpVersion(output: string): string | undefined {
@@ -117,6 +119,11 @@ export interface RuntimeResolverOptions {
 	env?: NodeJS.ProcessEnv;
 	/** `process.execPath`; em dev pode ser o próprio bun. */
 	execPath?: string;
+	/**
+	 * Sondagem das ferramentas opcionais (Git/Node). O main injeta o instalador
+	 * gerenciado; testes sem ele continuam usando o PATH como antes.
+	 */
+	probeDependencies?: () => Promise<DependencyRuntimeSnapshot>;
 }
 
 const RUNTIME_CONFIG_FILE = "runtime.json";
@@ -164,12 +171,16 @@ export class RuntimeResolver {
 		return { file: ompPath, args: ["--version"] };
 	}
 
-	async probeOmpPath(ompPath: string): Promise<OmpProbeResult> {
+	async probeOmpPath(ompPath: string, options: { signal?: AbortSignal } = {}): Promise<OmpProbeResult> {
 		if (!(await executableExists(ompPath))) {
 			return { compatible: false, message: "O executável do OMP não foi encontrado nesse caminho." };
 		}
 		const command = await this.probeCommand(ompPath);
-		const result = await execFileCaptured(command.file, command.args, { env: this.env, timeoutMs: 10_000 });
+		const result = await execFileCaptured(command.file, command.args, {
+			env: this.env,
+			timeoutMs: 10_000,
+			...(options.signal ? { signal: options.signal } : {}),
+		});
 		if (result.code !== 0) {
 			const detail = result.stderr.trim() || `código ${result.code}`;
 			return {
@@ -291,12 +302,20 @@ export class RuntimeResolver {
 		if (!force && this.statusCache && now - this.statusCache.at < 5000) {
 			return this.statusCache.value;
 		}
-		const [bunPath, omp, gitVersion, shell] = await Promise.all([
+		const [bunPath, omp, dependencies, shell] = await Promise.all([
 			this.resolveBun(),
 			this.resolveOmp(),
-			this.resolveGitVersion(),
+			this.opts.probeDependencies?.() ?? Promise.resolve(undefined),
 			this.resolveShell(),
 		]);
+		// O campo legado `gitVersion` vem do MESMO snapshot das ferramentas
+		// opcionais; sem sondagem injetada (testes isolados) cai no PATH.
+		const gitVersion = dependencies
+			? dependencies.git.state === "installed"
+				? dependencies.git.version
+				: undefined
+			: await this.resolveGitVersion();
+		const dependencyFields = dependencies ? { dependencies } : {};
 		let status: RuntimeStatus;
 		if (!bunPath) {
 			status = {
@@ -309,6 +328,7 @@ export class RuntimeResolver {
 				ompVersion: omp.ompVersion,
 				gitVersion,
 				shell,
+				...dependencyFields,
 			};
 		} else if (!omp.ompPath) {
 			status = {
@@ -318,6 +338,7 @@ export class RuntimeResolver {
 				bunPath,
 				gitVersion,
 				shell,
+				...dependencyFields,
 			};
 		} else if (!omp.compatible) {
 			status = {
@@ -329,6 +350,7 @@ export class RuntimeResolver {
 				bunPath,
 				gitVersion,
 				shell,
+				...dependencyFields,
 			};
 		} else {
 			status = {
@@ -340,6 +362,7 @@ export class RuntimeResolver {
 				bunPath,
 				gitVersion,
 				shell,
+				...dependencyFields,
 			};
 		}
 		this.statusCache = { at: now, value: status };

@@ -8,6 +8,7 @@ import type { ThemeMode } from "../../store/state";
 import { StatusIcon } from "../agents/StatusIcon";
 import { errorCode, errorText, unwrapRpcData } from "../agents/ui-utils";
 import { AccountsTab } from "../accounts/AccountsTab";
+import { OptionalToolsSection } from "../diagnostics/OptionalToolsSection";
 import { ModelPicker, ThinkingLevelControl } from "./ModelPicker";
 import {
 	advancedOptions,
@@ -409,6 +410,7 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 	const actions = useActions();
 	const theme = useStore((value) => value.theme);
 	const locale = useStore((value) => value.locale);
+	const runtime = useStore((value) => value.runtime);
 	const [tab, setTab] = useState<SettingsTab>(initialTab ?? "models");
 	const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -1105,6 +1107,13 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 							<span className="omp-muted">{t("settings.general.reopenOnboardingHint")}</span>
 						</div>
 					</section>
+
+					<div className="omp-settings-section">
+						<OptionalToolsSection
+							runtime={runtime}
+							onDependencies={(snapshot) => actions.applyDependencies(snapshot)}
+						/>
+					</div>
 
 					<section className="omp-settings-section" aria-labelledby="omp-origins-title">
 						<div className="omp-section-head">

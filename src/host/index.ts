@@ -415,6 +415,9 @@ interface RouteContext {
 const MAIN_ONLY_OPS: Record<string, true> = {
 	"runtime.status": true,
 	"runtime.selectOmp": true,
+	"runtime.installOmp": true,
+	"runtime.dependencies": true,
+	"runtime.installDependency": true,
 	"runtime.openExternal": true,
 	"ui.getState": true,
 	"ui.setState": true,

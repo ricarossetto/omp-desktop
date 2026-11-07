@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import type { RuntimeStatus } from "@shared/contracts";
+import type { OmpInstallState, RuntimeStatus } from "@shared/contracts";
 import { invoke } from "../../api";
 import { useI18n, type MessageKey } from "../../i18n";
 import { StatusIcon, type IconKind } from "../agents/StatusIcon";
-import { errorText, isRecord, unwrapRpcData } from "../agents/ui-utils";
+import { errorText, formatBytes, isRecord, unwrapRpcData } from "../agents/ui-utils";
+import { installErrorKey } from "./install-errors";
+import { asDependencySnapshot } from "./dependency-status";
+import { OptionalToolsSection } from "./OptionalToolsSection";
 import "./diagnostics.css";
 
 const PHASE_LABELS: Record<RuntimeStatus["phase"], MessageKey> = {
@@ -22,8 +25,52 @@ const PHASE_ICONS: Record<RuntimeStatus["phase"], IconKind> = {
 	"host-failed": "error",
 };
 
+const INSTALL_PHASE_LABELS: Record<
+	Extract<OmpInstallState, { state: "installing" }>["phase"],
+	MessageKey
+> = {
+	resolving: "diag.installPhase.resolving",
+	downloading: "diag.installPhase.downloading",
+	verifying: "diag.installPhase.verifying",
+	activating: "diag.installPhase.activating",
+};
+
 function isRuntimePhase(value: unknown): value is RuntimeStatus["phase"] {
 	return typeof value === "string" && Object.hasOwn(PHASE_LABELS, value);
+}
+
+function asInstallState(value: unknown): OmpInstallState | undefined {
+	if (!isRecord(value) || typeof value.state !== "string") return undefined;
+	if (value.state === "idle") return { state: "idle" };
+	if (value.state === "installing") {
+		const phase = value.phase;
+		if (
+			phase !== "resolving" &&
+			phase !== "downloading" &&
+			phase !== "verifying" &&
+			phase !== "activating"
+		) {
+			return undefined;
+		}
+		return {
+			state: "installing",
+			phase,
+			receivedBytes: typeof value.receivedBytes === "number" ? value.receivedBytes : undefined,
+			totalBytes: typeof value.totalBytes === "number" ? value.totalBytes : undefined,
+		};
+	}
+	if (value.state === "success") {
+		if (typeof value.ompPath !== "string" || typeof value.ompVersion !== "string") return undefined;
+		return { state: "success", ompPath: value.ompPath, ompVersion: value.ompVersion };
+	}
+	if (value.state === "error") {
+		return {
+			state: "error",
+			code: typeof value.code === "string" ? value.code : "INTERNAL",
+			message: typeof value.message === "string" ? value.message : "",
+		};
+	}
+	return undefined;
 }
 
 function asRuntimeStatus(raw: unknown): RuntimeStatus | null {
@@ -37,6 +84,8 @@ function asRuntimeStatus(raw: unknown): RuntimeStatus | null {
 		shell: typeof value.shell === "string" ? value.shell : undefined,
 		bunPath: typeof value.bunPath === "string" ? value.bunPath : undefined,
 		message: typeof value.message === "string" ? value.message : undefined,
+		install: asInstallState(value.install),
+		dependencies: asDependencySnapshot(value.dependencies),
 		signed: value.signed === true,
 	};
 }
@@ -60,9 +109,9 @@ export function DiagnosticsScreen({
 	status: RuntimeStatus;
 	onStatusChange?: (status: RuntimeStatus) => void;
 }) {
-	const { t } = useI18n();
+	const { t, formatNumber } = useI18n();
 	const [current, setCurrent] = useState<RuntimeStatus>(status);
-	const [busy, setBusy] = useState<"select" | "retry" | null>(null);
+	const [busy, setBusy] = useState<"select" | "retry" | "install" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 
@@ -73,6 +122,40 @@ export function DiagnosticsScreen({
 	const publish = (next: RuntimeStatus) => {
 		setCurrent(next);
 		onStatusChange?.(next);
+	};
+
+	const installErrorText = (state: Extract<OmpInstallState, { state: "error" }>): string => {
+		return t(installErrorKey(state.code), { message: state.message });
+	};
+
+	const installOmp = async () => {
+		setBusy("install");
+		setError(null);
+		setNotice(null);
+		try {
+			const next = asRuntimeStatus(await invoke({ op: "runtime.installOmp" }));
+			if (!next) {
+				setError(t("diag.invalidStatus"));
+				return;
+			}
+			publish(next);
+			if (next.install?.state === "success") {
+				setNotice(
+					t("diag.installSuccess", {
+						version: next.install.ompVersion,
+						path: next.install.ompPath,
+					}),
+				);
+			} else if (next.install?.state === "error") {
+				// A seção de instalação mostra o erro com a ação de tentar de novo.
+			} else if (next.phase === "ready") {
+				setNotice(t("diag.selectedReady"));
+			}
+		} catch (failure) {
+			setError(t("diag.installError", { message: errorText(failure) }));
+		} finally {
+			setBusy(null);
+		}
 	};
 
 	const selectOmp = async () => {
@@ -119,6 +202,10 @@ export function DiagnosticsScreen({
 	};
 
 	const missingOmp = current.phase === "omp-missing" || current.phase === "omp-incompatible";
+	const installState = current.install;
+	const installing = installState?.state === "installing";
+	const installBusy = busy === "install" || installing;
+	const installError = installState?.state === "error" ? installState : null;
 
 	return (
 		<section className="omp-diagnostics" aria-label={t("diag.aria")}>
@@ -128,19 +215,29 @@ export function DiagnosticsScreen({
 					<p className="omp-muted">{t("diag.lead")}</p>
 				</div>
 				<div className="omp-row">
+					{missingOmp ? (
+						<button
+							type="button"
+							className="omp-button omp-button-primary"
+							onClick={() => void installOmp()}
+							disabled={busy !== null || installBusy}
+						>
+							{installBusy ? t("diag.installing") : t("diag.installOmp")}
+						</button>
+					) : null}
 					<button
 						type="button"
 						className="omp-button"
 						onClick={() => void selectOmp()}
-						disabled={busy !== null}
+						disabled={busy !== null || installBusy}
 					>
 						{busy === "select" ? t("diag.selecting") : t("diag.selectOmp")}
 					</button>
 					<button
 						type="button"
-						className="omp-button omp-button-primary"
+						className="omp-button"
 						onClick={() => void retry()}
-						disabled={busy !== null}
+						disabled={busy !== null || installBusy}
 					>
 						{busy === "retry" ? t("diag.checking") : t("diag.checkAgain")}
 					</button>
@@ -171,6 +268,49 @@ export function DiagnosticsScreen({
 				</div>
 			) : null}
 
+			{installState?.state === "installing" ? (
+				<section className="omp-diagnostics-section omp-install-progress" aria-labelledby="omp-install-progress-title">
+					<h2 id="omp-install-progress-title">{t("diag.installProgressTitle")}</h2>
+					<p role="status">{t(INSTALL_PHASE_LABELS[installState.phase])}</p>
+					{typeof installState.receivedBytes === "number" &&
+					typeof installState.totalBytes === "number" &&
+					installState.totalBytes > 0 ? (
+						<>
+							<progress
+								className="omp-install-progress__bar"
+								max={installState.totalBytes}
+								value={installState.receivedBytes}
+								aria-label={t("diag.installProgressAria")}
+							/>
+							<p className="omp-muted">
+								{t("diag.installProgressBytes", {
+									received: formatBytes(installState.receivedBytes) ?? String(installState.receivedBytes),
+									total: formatBytes(installState.totalBytes) ?? String(installState.totalBytes),
+									percent: formatNumber(
+										Math.floor((installState.receivedBytes / installState.totalBytes) * 100),
+									) ?? "0",
+								})}
+							</p>
+						</>
+					) : null}
+				</section>
+			) : null}
+
+			{installError ? (
+				<div className="omp-message omp-message-error" role="alert">
+					<StatusIcon kind="error" />
+					<span>{installErrorText(installError)}</span>
+					<button
+						type="button"
+						className="omp-button"
+						onClick={() => void installOmp()}
+						disabled={busy !== null || installBusy}
+					>
+						{t("diag.installRetry")}
+					</button>
+				</div>
+			) : null}
+
 			{missingOmp ? (
 				<section className="omp-diagnostics-section" aria-labelledby="omp-install-title">
 					<h2 id="omp-install-title">{t("diag.howToFix")}</h2>
@@ -179,6 +319,15 @@ export function DiagnosticsScreen({
 					) : (
 						<>
 							<p>{t("diag.missingBody")}</p>
+							<button
+								type="button"
+								className="omp-button omp-button-primary"
+								onClick={() => void installOmp()}
+								disabled={busy !== null || installBusy}
+							>
+								{installBusy ? t("diag.installing") : t("diag.installOmpAction")}
+							</button>
+							<p className="omp-muted">{t("diag.missingManual")}</p>
 							<pre>{t("diag.missingInstall")}</pre>
 							<p className="omp-muted">{t("diag.missingAlternative")}</p>
 							<p>{t("diag.missingSelect")}</p>
@@ -202,6 +351,11 @@ export function DiagnosticsScreen({
 				</dl>
 				<p className="omp-muted">{t("diag.gitNote")}</p>
 			</section>
+
+			<OptionalToolsSection
+				runtime={current}
+				onDependencies={(snapshot) => publish({ ...current, dependencies: snapshot })}
+			/>
 
 			<section className="omp-diagnostics-section omp-diagnostics-signing" aria-labelledby="omp-signing-title">
 				<h2 id="omp-signing-title">{t("diag.signingTitle")}</h2>

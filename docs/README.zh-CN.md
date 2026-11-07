@@ -4,7 +4,7 @@
 
 **真正有窗口的 OMP。** 在 Windows 应用里使用项目、会话、运行器、审批、Git 和终端。
 
-[Português (Brasil)](../README.md) · [English (US)](README.en-US.md) · [简体中文](README.zh-CN.md)
+[Português (Brasil)](README.pt-BR.md) · [English (US)](../README.md) · [简体中文](README.zh-CN.md)
 
 ![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
@@ -88,6 +88,7 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 - 在 Monaco 差异编辑器中查看 **working** 和 **index** 差异，完全本地，不依赖 CDN。
 - 按文件 stage 和 unstage，不触碰工作树。提交需要输入消息并点击；钩子失败会显示，文件保持不变。
 - 没有 `push`、`reset`、`clean` 或自动丢弃。不在仓库中时，面板会解释原因，并且**不会**运行 `git init`。
+- Git 是可选的。缺失时，面板会说明原因；可选安装操作位于诊断页和 **设置 → 通用**。不会模拟仓库。
 
 ### 集成终端
 
@@ -95,12 +96,12 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 
 ### 首次运行与桌面体验
 
-- 首次运行向导：检查 OMP、Git 和终端，选择主题并打开第一个项目。
+- 首次运行向导：检查 OMP、Git 和终端；OMP 缺失时可选择 **Install OMP**（需明确点击），缺少 Git 或 Node.js 时也可按需安装，然后选择主题并打开第一个项目。
 - 自带标题栏，包含会话历史（后退/前进，`Alt+←`/`Alt+→`）、搜索和主题切换。
 - 宽度低于 1000 px 时，侧边栏和右侧面板变成抽屉；对话区域不会被挤压。
 - 浅色和深色主题；面板可调整大小并记住尺寸。
 - 焦点可见、键盘导航、可访问标签，并尊重“减少动态效果”设置。
-- OMP 未安装或版本不兼容时给出清晰诊断，并允许手动选择 `omp.exe`。
+- OMP 未安装或版本不兼容时给出清晰诊断，提供 **Install OMP**（明确点击后从官方来源安装）并允许手动选择 `omp.exe`。
 
 ## 语言
 
@@ -111,9 +112,13 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 ### 系统要求
 
 - **Windows x64**（Windows 10/11）。
-- **OMP** 已安装，`omp.exe` 在 PATH 中。已验证版本：**18.16.0**（基线）。不支持低于 18.16.0 的版本，宿主可能拒绝启动会话；请先升级 OMP。
-- Git 只有“更改”面板需要，属于可选依赖。
+- **OMP** 已安装，`omp.exe` 在 PATH 中，或在首次运行时通过 **Install OMP** 从官方来源安装（需明确点击）。已验证版本：**18.16.0**（基线）。宿主接受主版本 18 或更高；OMP 17 或更早版本会被视为不兼容。
+- Git 只有“更改”面板需要，属于可选依赖；应用可按需安装官方 MinGit。
+- Node.js LTS 只有项目/MCP 和官方 npm 需要，属于可选依赖；应用可按需安装当前 LTS。
+- 应用、OMP 和首次运行引导不需要 Git 或 Node.js；Bun 已内置。
 - 不需要管理员权限：安装程序按当前用户安装（per-user）。
+
+**OMP 版本支持：** 已验证基线为 18.16.0，辅助安装固定为 18.16.0。宿主接受主版本 18 或更高；OMP 17 或更早版本会被视为不兼容。高于 18.x 系列的版本会被接受，但标记为未验证。
 
 ### 下载
 
@@ -126,17 +131,44 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 
 ### 安装步骤
 
-1. 确认已安装 OMP，并在终端中运行 `omp --version`。
+1. 安装 OMP，或稍后在首次运行向导中点击 **Install OMP**；也可以在终端中运行 `omp --version` 验证现有安装。
 2. 运行安装程序。它按当前用户安装，不请求管理员权限。
 3. 启动 OMP Desktop。首次运行向导会检查环境。
-4. 如果 OMP 不在 PATH 中，在诊断页手动选择 `omp.exe`。
+4. 如果 OMP 不在 PATH 中，选择 **Install OMP**，或手动选择现有的 `omp.exe`；缺少 Git 或 Node.js 时，可在同一流程中按需安装。
 5. 打开一个项目文件夹开始会话。
 
-> **安装程序未签名。** Windows SmartScreen 可能显示警告。请确认文件来自本仓库的 Releases 页面，并在需要时核对发布页提供的 SHA256。**不要为了安装而关闭 SmartScreen 或系统安全功能**；如果来源无法确认，请不要运行。
+> **安装程序未签名。** Windows SmartScreen 可能显示警告。请确认文件来自本仓库的 Releases 页面，并在需要时核对发布页提供的 SHA-256。**不要为了安装而关闭 SmartScreen 或系统安全功能**；如果来源无法确认，请不要运行。
 >
-> 安装程序**不包含 OMP**。它内置本地服务使用的 Bun（`resources/bun/bun.exe`），但智能体是你自己的 OMP。应用依赖的 `@oh-my-pi/pi-coding-agent` 是 MIT 许可的 SDK 代码，不是 OMP 可执行文件。
+> 安装程序**不包含 OMP**。它内置本地服务使用的 Bun（`resources/bun/bun.exe`），但智能体是你自己的 OMP，或首次运行时经明确确认后从官方来源安装的 OMP。应用依赖的 `@oh-my-pi/pi-coding-agent` 是 MIT 许可的 SDK 代码，不是 OMP 可执行文件。
 >
 > 没有自动更新：新版本需要下载新的安装程序覆盖安装。
+
+### 从应用安装 OMP
+
+如果 OMP 缺失，首次运行向导和诊断页会提供 **Install OMP**。只有在明确点击 **Install OMP** 后，应用才会：
+
+- 通过 OMP Windows 官方安装程序使用的同一官方构建服务（`build.stencil.so`）解析固定版本 **18.16.0** 的 Windows 二进制，并根据当前架构选择目标（x64 构建使用 `windows-x86_64`）；
+- 通过 HTTPS 下载到 `%LOCALAPPDATA%\omp\omp.exe`，像官方安装程序一样遵循 `PI_INSTALL_DIR`，不需要管理员权限；
+- 校验官方服务公布的 SHA-256，并运行 `omp.exe --version`，只有版本与固定版本一致才使用该文件；
+- 从不覆盖已有的 `omp.exe`：兼容文件会被采用，不兼容文件会作为冲突报告，手动选择仍然可用。
+
+首次运行且缺少 OMP 时，应用会直接打开诊断页；引导的环境步骤也会显示同一操作。应用不会修改用户持久 PATH 或注册表：它把绝对路径保存在自己的运行时状态中，只把该文件夹加入自身进程（宿主和终端）的 PATH。它不会改动 `~/.omp`。并发点击共享同一次安装；安装期间关闭应用会中止下载并清理临时文件。
+
+内置 Bun 只是本地宿主的运行时；OMP 二进制是独立的，因此不需要安装全局 Bun。渲染进程不能提供 URL 或命令：下载主机、文件名、版本和参数都固定在主进程中。成功后，应用会应用检测到的路径并更新引导/诊断，无需重启，也不会丢失草稿或语言。网络、校验和、版本、写入、激活和取消错误都会显示并提供重试（激活失败时保留已安装的二进制），**Check again** 会重新检查环境，**选择 omp.exe** 仍然可用。
+
+也可以按照 [omp.sh](https://omp.sh) 的官方说明手动安装 OMP，然后选择 **选择 omp.exe**；独立二进制不需要全局 Bun。
+
+### 从应用安装可选工具
+
+Git 和 Node.js LTS 都是可选的。应用、OMP 和首次运行引导在没有它们时也能工作；Bun 已内置，OMP 不需要系统 Node.js。引导的环境步骤、诊断页和 **设置 → 通用** 会显示 **可选开发工具** 区域以及 Git 和 Node.js LTS 的状态。**安装 Git** 或 **安装 Node.js LTS** 会显示 **安装 … 前** 确认；只有点击 **下载并安装** 后才开始下载。
+
+**Git（更改面板）。** 应用把 Git for Windows 官方 [MinGit](https://gitforwindows.org/mingit.html) **2.56.0.windows.4** ZIP（Git for Windows 官方用于嵌入的分发）安装到 `%LOCALAPPDATA%\omp-desktop\tools\git`，不使用安装程序、管理员权限、winget 或 MSI。安装前校验公布的 SHA-256，安全解压 ZIP，并运行 `git.exe --version`。应用只把 `...\tools\git\cmd` 加入自身进程的 PATH。手动替代：[git-scm.com/download/win](https://git-scm.com/download/win)。
+
+**Node.js LTS（项目/MCP）。** 应用从 [nodejs.org](https://nodejs.org) 在安装时解析**当前 Node.js LTS**（发布时为 v26.13.0），使用官方 Windows ZIP 安装到 `%LOCALAPPDATA%\omp-desktop\tools\node`，不使用安装程序或管理员权限，包含官方 npm 和 npx。安装前校验官方 `SHASUMS256.txt` 中的 SHA-256，安全解压并探测可执行文件。应用只把该文件夹加入自身进程的 PATH。它不会安装项目或 MCP 依赖；npm 可供你自行运行。手动替代：[nodejs.org/en/download](https://nodejs.org/en/download)。
+
+两者都按用户安装，不修改用户或系统持久 PATH、注册表，也不覆盖已有的全局 Git/Node.js。PATH 中兼容的全局工具会被检测并原样采用；不兼容或不完整的管理目录会被报告，不会被覆盖。新终端和新启动的宿主/OMP 子进程会看到这些工具；正在运行的智能体和终端不会被重启或中断，下一次本地服务启动也会加载它们。安装过程显示 resolving/downloading/verifying/extracting/activating 进度，并以成功或可操作的错误结束，可重试（**重试**）；**重新检查** 会重新探测环境。成功后，该行会显示已安装的版本和位置。并发点击会为每个工具共享同一次安装；关闭应用会中止下载并清理临时文件。
+
+渲染进程不能提供 URL、版本、命令或文件夹：来源、版本、目标和参数都固定在主进程中。**取消** 会中止下载，并保持现有安装不变。也可以从官方页面手动安装 Git 或 Node.js，然后使用 **重新检查**。
 
 ### 卸载
 
@@ -145,7 +177,7 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 ## 首次使用（5 步）
 
 1. **欢迎**：了解应用能做什么，以及它明确不做什么。
-2. **环境**：检查 OMP、协议、Git、终端和 Bun 宿主；缺失项可直接打开诊断。
+2. **环境**：检查 OMP、协议、Git、终端和 Bun 宿主；OMP 缺失时可选择 **Install OMP**，只有明确点击 **Install OMP** 后才会执行官方安装。安装过程显示 resolving/downloading/verifying/activating 进度，并以成功或可操作的错误结束；成功后应用会自动检测真实可执行文件并更新诊断，无需重启、重开流程或丢失草稿和语言。失败时手动选择 `omp.exe` 仍然可用。该步骤还会显示可选的 **Git** 和 **Node.js LTS** 操作；两者都不是继续所必需的。安装方式见[从应用安装 OMP](#从应用安装-omp)和[从应用安装可选工具](#从应用安装可选工具)。
 3. **账户**：查看 OMP 已有的账户和用量；不会读取或显示任何令牌。
 4. **默认模型**：为新会话选择全局默认模型；只有点击确认后才会更改。
 5. **主题和项目**：选择主题，并可打开第一个项目。
@@ -176,6 +208,8 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 | 内容 | 位置 |
 | --- | --- |
 | 桌面应用设置、窗口状态、日志 | `%APPDATA%\omp-desktop` |
+| 应用安装的托管 Git（可选） | `%LOCALAPPDATA%\omp-desktop\tools\git` |
+| 应用安装的托管 Node.js LTS 和 npm（可选） | `%LOCALAPPDATA%\omp-desktop\tools\node` |
 | OMP 会话、配置、账户与凭据 | `~/.omp`（OMP 自己的配置文件） |
 
 应用不复制 OMP 的凭据到自己的目录，也不会把它们写入仓库。**请不要把凭据文件、个人日志或包含敏感信息的截图提交到 GitHub。**
@@ -183,6 +217,8 @@ OMP Desktop 是 OMP（oh-my-pi）的图形界面。它**不重新实现智能体
 ## 开发
 
 需要 Windows x64 和 Bun 1.4+。
+
+用于下载 Electron 的 Node.js 是开发要求。它与应用可为项目/MCP 安装的可选 Node.js LTS 不同；应用运行不需要系统 Node.js。
 
 ```powershell
 Set-Location "C:\dev\omp-desktop"
@@ -239,6 +275,7 @@ src/
   main/       Electron 主进程：窗口、IPC、终端、Git、文件、宿主生命周期
   host/       Bun 宿主：RPC 传输、会话、运行器、附件、设置、账户
   renderer/   界面（React，无 Node）
+  preload/    暴露给渲染进程的唯一桥接
   shared/     契约（zod）、会话状态 reducer、类型
 tests/        单元测试与验收（含 tests/fixtures/fake-omp.ts）
 scripts/      构建宿主、打包、安装后冒烟
@@ -254,13 +291,16 @@ docs/         截图、检查清单、发布安全说明
 
 | 情况 | 应用行为 |
 | --- | --- |
-| OMP 未安装或不在 PATH | 显示诊断页，说明缺失项，并允许手动选择 `omp.exe` |
-| OMP 版本低于 18.16 | 不受支持，宿主可能拒绝启动会话；请先升级 OMP |
+| OMP 未安装或不在 PATH | 显示诊断页，说明缺失项，提供 **Install OMP**（明确点击后安装固定版本官方二进制）并允许手动选择 `omp.exe`；不会静默安装，失败后仍可手动选择并重试 |
+| OMP 17 或更早 | 被视为不兼容。请使用 **Install OMP** 或先升级 OMP |
+| Git 未安装或不在 PATH | “更改”面板说明缺失；可选安装操作位于诊断页和 **设置 → 通用**。应用其余功能正常 |
+| Node.js 未安装 | 需要 Node.js/npm 的项目或 MCP 在安装前不可用；可选安装操作位于诊断页和 **设置 → 通用**。应用和 OMP 无需它也能工作 |
+| 可选工具安装失败 | 显示本地化错误并可重试；不会覆盖任何内容，仍可手动安装 |
 | 宿主进程启动失败 | 显示 `host-failed` 诊断状态，可重试或重新选择 OMP |
 | 配置文件在应用外被修改 | 不覆盖任何内容，重新加载并提示检查后再试 |
 | 会话被其他进程占用 | 提示该会话正在使用，并允许打开另一个会话 |
 | 终端启动失败 | 回退到 cmd；仍失败时在面板中显示错误 |
-| 安装包未签名 | SmartScreen 警告；请核对来源和 SHA256，不要关闭系统安全功能 |
+| 安装包未签名 | SmartScreen 警告；请核对来源和 SHA-256，不要关闭系统安全功能 |
 
 对话本身也有恢复策略：草稿只在 OMP 确认后消失；停止会恢复队列中的草稿和附件；暂停会等待当前工具结束；重新加载窗口不会丢失待处理的审批。
 
@@ -272,6 +312,9 @@ docs/         截图、检查清单、发布安全说明
 - 文件只有在无害扩展名白名单内才会在应用外打开；脚本和可执行文件只在文件夹中显示。
 - 发送到界面的数据和日志不包含令牌、认证头或 `providerPayload`。
 - 进程只按应用自己启动的 PID 树终止，从不按名称终止。
+- 应用没有自己的遥测；网络流量来自 OMP、你配置的提供商，以及你选择安装操作时使用的官方 OMP 构建服务和官方 Git/Node.js 来源。
+- 首次运行提供的 OMP 安装使用官方构建服务的 Windows 官方二进制，固定为 18.16.0，校验公布的 SHA-256 和 `omp.exe --version`，只写入 `%LOCALAPPDATA%\omp`（或 `PI_INSTALL_DIR`），从不覆盖已有文件；渲染进程不能提供 URL 或命令。
+- 可选的 Git/Node.js 安装使用固定官方来源，校验 SHA-256，安全解压，从不覆盖已有全局工具，也不修改持久 PATH 或注册表；只扩展应用自身进程的 PATH。
 
 **日志脱敏的边界**：应用会移除令牌、认证头和提供商负载，但**不能保证**删除你在提示词或终端中自行输入的敏感内容。请把日志视为敏感数据，不要公开上传。
 
@@ -281,7 +324,9 @@ docs/         截图、检查清单、发布安全说明
 
 - **仅支持 Windows x64**；没有 macOS 或 Linux 构建。
 - **没有自动更新**：需要手动下载并覆盖安装。
-- **不会自动安装或更新 OMP**：OMP 必须由你自行安装和维护。
+- **不包含 OMP**：首次运行向导可在明确点击后安装固定为 18.16.0 的 Windows 官方二进制，但不会静默安装或更新；需要兼容的 `omp.exe`（主版本 18 或更高；已用 18.16.0 验证）。
+- **Git 和 Node.js LTS 是可选的，且不随应用分发。** 应用可按需安装官方构建，但不会静默更新；兼容的全局安装会被检测并原样使用。
+- **Git 没有 push、reset、clean 或自动丢弃**：面板覆盖状态、差异、stage、unstage 和提交。
 - **不提供 OMP RPC 未暴露的权限模式选择**：应用不会伪造 RPC 不支持的权限或审批行为。
 - 安装程序**未签名**，SmartScreen 可能警告。
 - 自动化测试和检查有覆盖边界，不能证明所有环境下的行为。
@@ -290,7 +335,7 @@ docs/         截图、检查清单、发布安全说明
 
 本项目使用 **MIT** 许可证，见 [`LICENSE`](../LICENSE)。
 
-第三方组件（OMP SDK、zod、node-pty、React、xterm、Monaco、Electron 等）的版权与许可声明保留在 [`resources/licenses`](../resources/licenses/NOTICE.txt)。内置的 Bun 运行时遵循其官方分发中的 MIT 许可；OMP 可执行文件不会被重新分发。
+第三方组件（OMP SDK、zod、node-pty、React、xterm、Monaco、Electron 等）的版权与许可声明保留在 [`resources/licenses`](../resources/licenses/NOTICE.txt)。构建使用 electron-builder。内置的 Bun 运行时遵循其官方分发中的 MIT 许可；OMP 可执行文件不会被重新分发。
 
 ## 贡献与反馈
 

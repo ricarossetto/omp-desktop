@@ -28,6 +28,14 @@ export function createPreviewStore(initial: AppState): PreviewStore {
 		refreshRuntime: done,
 		retryRuntime: done,
 		selectOmp: done,
+		installOmp: done,
+		applyDependencies: (snapshot) => {
+			set((current) =>
+				current.runtime
+					? { ...current, runtime: { ...current.runtime, dependencies: snapshot } }
+					: current,
+			);
+		},
 		loadWorkspaces: done,
 		pickWorkspace: done,
 		removeWorkspace: done,

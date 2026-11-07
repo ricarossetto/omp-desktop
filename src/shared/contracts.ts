@@ -3,6 +3,15 @@
  * Somente o integrador altera este arquivo.
  */
 import { z } from "zod";
+import { DEPENDENCY_KINDS } from "./dependency-install-types";
+import type { DependencyRuntimeSnapshot } from "./dependency-install-types";
+
+export type {
+	DependencyKind,
+	DependencyProbe,
+	DependencyRuntimeSnapshot,
+	DependencyRuntimeState,
+} from "./dependency-install-types";
 
 // ---------------------------------------------------------------------------
 // Envelope main <-> host (JSONL em stdin/stdout)
@@ -119,6 +128,9 @@ export const desktopRequestSchema = z.discriminatedUnion("op", [
 	// Ambiente
 	z.object({ op: z.literal("runtime.status") }),
 	z.object({ op: z.literal("runtime.selectOmp") }),
+	z.object({ op: z.literal("runtime.installOmp") }),
+	z.object({ op: z.literal("runtime.dependencies") }),
+	z.object({ op: z.literal("runtime.installDependency"), dependency: z.enum(DEPENDENCY_KINDS) }),
 	z.object({ op: z.literal("runtime.openExternal"), url: z.string().url() }),
 	z.object({ op: z.literal("ui.getState") }),
 	z.object({ op: z.literal("ui.setState"), state: z.record(z.string(), z.unknown()) }),
@@ -221,6 +233,24 @@ export interface SessionListItem {
 	locked?: boolean;
 }
 
+export type OmpInstallPhase = "resolving" | "downloading" | "verifying" | "activating";
+
+/**
+ * Estado da instalação do OMP iniciada pelo usuário. `idle` é o padrão;
+ * `installing` carrega a fase e o progresso do download; `success` e `error`
+ * são terminais até uma nova tentativa.
+ */
+export type OmpInstallState =
+	| { state: "idle" }
+	| {
+			state: "installing";
+			phase: OmpInstallPhase;
+			receivedBytes?: number;
+			totalBytes?: number;
+	  }
+	| { state: "success"; ompPath: string; ompVersion: string }
+	| { state: "error"; code: string; message: string };
+
 export interface RuntimeStatus {
 	phase: "starting-host" | "ready" | "omp-missing" | "omp-incompatible" | "host-failed";
 	ompPath?: string;
@@ -229,6 +259,13 @@ export interface RuntimeStatus {
 	shell?: string;
 	bunPath?: string;
 	message?: string;
+	/** Instalação do OMP em andamento/último resultado; ausente = idle. */
+	install?: OmpInstallState;
+	/**
+	 * Snapshot de Git/Node opcionais. Ausente quando o main ainda não sondou;
+	 * nunca é fabricado pelo renderer. Não altera `phase` nem bloqueia o app.
+	 */
+	dependencies?: DependencyRuntimeSnapshot;
 	signed: boolean;
 }
 
