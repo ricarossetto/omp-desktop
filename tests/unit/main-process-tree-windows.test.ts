@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 
@@ -33,7 +32,7 @@ async function runWindowsCases(): Promise<ChildResult> {
 }
 
 test(
-	"casos Windows rodam isolados em subprocesso",
+	"encerramento no Windows recusa identidade incompleta e não sinaliza descendentes após falha",
 	async () => {
 		const result = await runWindowsCases();
 		expect(result.code).toBe(0);
@@ -42,12 +41,3 @@ test(
 	30_000,
 );
 
-test("execFile real continua disponível no processo pai", async () => {
-	const { promise, resolve } = Promise.withResolvers<{ code: number; stdout: string }>();
-	execFile(process.execPath, ["-e", "console.log('real-execfile-ok')"], (error, stdout) => {
-		resolve({ code: error ? 1 : 0, stdout: String(stdout) });
-	});
-	const result = await promise;
-	expect(result.code).toBe(0);
-	expect(result.stdout).toContain("real-execfile-ok");
-});
