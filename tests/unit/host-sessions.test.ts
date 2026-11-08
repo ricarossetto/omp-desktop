@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { DesktopEvent } from "../../src/shared/contracts";
+import { isRecord } from "../../src/shared/session-state";
 import { AttachmentStore } from "../../src/host/attachments";
 import { jsonBytes, MAX_EVENT_BYTES } from "../../src/host/limits";
 import { HostLogger } from "../../src/host/log";
@@ -232,6 +233,37 @@ describe("SessionsService", () => {
 		expect(snapshot.state.stats?.costUsd).toBe(0.42);
 		expect(snapshot.state.meta?.contextPercent).toBe(3.2);
 		expect(snapshot.state.status).toBe("settled");
+	});
+
+	test("prompt emite session.status busy antes da resposta do rpc", async () => {
+		// O main acompanha ocupação por evento (não marca busy depois da
+		// resposta): o busy precisa existir antes do ack para que um
+		// prompt_result/session_settled que chegue no mesmo chunk não seja
+		// desfeito por uma marca tardia.
+		const harness = await createHarness({ scenario: "stream" });
+		const snapshot = await harness.sessions.create(harness.workspaceId);
+		const eventsBefore = harness.bus.events.length;
+		let eventsAtResponse = -1;
+		const rpc = harness.sessions
+			.rpc({
+				workspaceId: harness.workspaceId,
+				sessionId: snapshot.state.sessionId,
+				command: { type: "prompt", message: "oi" },
+			})
+			.then((result) => {
+				eventsAtResponse = harness.bus.events.length;
+				return result;
+			});
+		await rpc;
+		const busyIndex = harness.bus.events.findIndex(
+			(event, index) =>
+				index >= eventsBefore &&
+				event.name === "session.status" &&
+				isRecord(event.data) &&
+				event.data.status === "busy",
+		);
+		expect(busyIndex).toBeGreaterThanOrEqual(0);
+		expect(busyIndex).toBeLessThan(eventsAtResponse);
 	});
 
 	test("pergunta ask multi-pergunta é respondida e não aceita segunda resposta", async () => {

@@ -1310,7 +1310,6 @@ async function bootstrap(): Promise<void> {
 		prepareOptionalToolEnv: preseedOptionalToolPaths,
 		log,
 		isSmokeMode: () => Boolean(smokeReportPath),
-		markSessionBusy: (sessionId) => busySessions.add(sessionId),
 	});
 
 	mainWindow = createWindow();

@@ -133,7 +133,6 @@ export interface BridgeDeps {
 	prepareOptionalToolEnv(): void;
 	log(level: "info" | "warn" | "error", event: string, fields?: Record<string, unknown>): void;
 	isSmokeMode(): boolean;
-	markSessionBusy?(sessionId: string): void;
 }
 
 export class MainBridge {
@@ -595,7 +594,12 @@ export class MainBridge {
 			case "session.rpc": {
 				this.requireSession(request.workspaceId, request.sessionId);
 				this.validateAttachmentIds(request.workspaceId, request.command);
-				const rpcResult = await this.deps.requestHost(
+				// O host emite `session.status busy` ANTES de mandar o prompt ao
+				// OMP; o main acompanha ocupação por evento. Marcar ocupado depois
+				// desta resposta reintroduziria a sessão já `settled` quando os
+				// frames do OMP chegam no mesmo chunk da resposta (Linux): o quit
+				// passaria a achar trabalho ativo e abriria o diálogo para sempre.
+				return await this.deps.requestHost(
 					"session.rpc",
 					{
 						workspaceId: request.workspaceId,
@@ -604,14 +608,6 @@ export class MainBridge {
 					},
 					rpcTimeoutFor(request.command.type),
 				);
-				if (
-					request.command.type === "prompt" ||
-					request.command.type === "steer" ||
-					request.command.type === "follow_up"
-				) {
-					this.deps.markSessionBusy?.(request.sessionId);
-				}
-				return rpcResult;
 			}
 
 			case "session.uiResponse": {

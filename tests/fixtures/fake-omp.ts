@@ -31,6 +31,7 @@
  *       FAKE_OMP_USAGE=error|used_limit
  */
 import { YAML } from "bun";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -48,24 +49,17 @@ const resumePath = resumeIndex >= 0 ? process.argv[resumeIndex + 1] : undefined;
 const sessionFile =
 	resumePath ??
 	process.env.FAKE_OMP_SESSION_FILE ??
-	path.join(os.tmpdir(), `fake-omp-${process.pid}.jsonl`);
+	// PID sozinho não basta: o Windows reutiliza PIDs e um processo novo
+	// carregaria o histórico deixado por outro teste. O sufixo aleatório
+	// garante um arquivo novo por processo; `--resume` e FAKE_OMP_SESSION_FILE
+	// continuam tendo precedência (restauração e harness explícito).
+	path.join(os.tmpdir(), `fake-omp-${process.pid}-${randomUUID()}.jsonl`);
 const recordPath = process.env.FAKE_OMP_RECORD;
 const maxFrameBytes = Number(process.env.FAKE_OMP_MAX_FRAME ?? 1024 * 1024);
 // No OMP real o id vem do arquivo da sessão: estável entre reinícios (permite
 // reanexar a aba) e distinto por arquivo.
 const sessionId =
 	process.env.FAKE_OMP_SESSION_ID ?? `fake-session-${path.basename(sessionFile, path.extname(sessionFile))}`;
-
-// O OMP real grava o arquivo da sessão; o host checa a existência ao restaurar
-// abas. Sem isso, a aba seria descartada como “arquivo removido”.
-try {
-	if (!fs.existsSync(sessionFile)) {
-		fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-		fs.writeFileSync(sessionFile, "");
-	}
-} catch {
-	/* diretório somente leitura: segue sem arquivo */
-}
 
 let negotiated = false;
 let chunkCounter = 0;
@@ -429,6 +423,19 @@ function handleCli(args: readonly string[]): boolean {
 
 if (handleCli(process.argv.slice(2))) {
 	process.exit(process.exitCode ?? 0);
+}
+
+// Só o modo RPC é uma sessão. O OMP real grava o arquivo da sessão e o host
+// checa a existência ao restaurar abas; sem isso, a aba seria descartada como
+// “arquivo removido”. Comandos CLI (`config`, `models`, `usage`) não podem
+// criar nem carregar histórico.
+try {
+	if (!fs.existsSync(sessionFile)) {
+		fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+		fs.writeFileSync(sessionFile, "");
+	}
+} catch {
+	/* diretório somente leitura: segue sem arquivo */
 }
 
 async function writeLine(line: string): Promise<void> {

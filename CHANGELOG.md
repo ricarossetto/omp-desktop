@@ -60,6 +60,8 @@ remains Windows-only.
   Windows drive/UNC/ADS rules, and executable-bit handling for scripts.
 - Treat a process that exits while its children are being stopped as already
   stopped, preserving the process creation/identity guards.
+- Closing a session during active work uses a short grace period; quitting no
+  longer waits on an already-settled session.
 - Electron window on Linux with the sandbox enabled (`sandbox: true`, never
   `--no-sandbox`); packaged Bun at `resources/bun/bun`.
 - OMP assisted install on Linux: official `linux-x86_64` binary from the

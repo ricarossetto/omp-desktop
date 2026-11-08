@@ -88,6 +88,13 @@ const LONG_RPC_TIMEOUT_MS: Record<string, number> = {
 	get_session_stats: 300_000,
 };
 
+/**
+ * Fechamento confirmado de uma sessão que está trabalhando: o diálogo já
+ * avisou que a execução atual será interrompida, então não se espera o mesmo
+ * prazo de um encerramento ocioso antes de matar a árvore do OMP.
+ */
+const BUSY_CLOSE_GRACE_MS = 2_000;
+
 interface InventoryItem {
 	path: string;
 	id: string;
@@ -774,7 +781,8 @@ export class SessionsService {
 					.respondUI({ type: "extension_ui_response", id: dialog.id, cancelled: true } as RpcExtensionUIResponse)
 					.catch(() => undefined);
 			}
-			await transport.close();
+			const busy = session.state.status === "busy" || session.state.meta?.isStreaming === true;
+			await transport.close(busy ? BUSY_CLOSE_GRACE_MS : undefined);
 		}
 		session.transport = undefined;
 		for (const dialog of pending) {

@@ -87,6 +87,8 @@ interface Deferred<T> {
 
 const DEFAULT_STARTUP_TIMEOUT = 90_000;
 const DEFAULT_REQUEST_TIMEOUT = 120_000;
+/** Espera padrão por saída limpa antes de encerrar a árvore do OMP. */
+const CLOSE_GRACE_MS = 10_000;
 const MAX_PHYSICAL_LINE = 64 * 1024 * 1024;
 const MAX_STDERR_TAIL = 8192;
 
@@ -596,13 +598,18 @@ export class OmpTransport {
 		this.notifyExit(code);
 	}
 
-	async close(): Promise<void> {
+	/**
+	 * Encerra o processo. `graceMs` é a espera por saída limpa depois do fim do
+	 * stdin; fechar uma sessão que está trabalhando usa um prazo curto porque o
+	 * usuário já confirmou a interrupção.
+	 */
+	async close(graceMs = CLOSE_GRACE_MS): Promise<void> {
 		if (this.closePromise) return this.closePromise;
-		this.closePromise = this.performClose();
+		this.closePromise = this.performClose(graceMs);
 		return this.closePromise;
 	}
 
-	private async performClose(): Promise<void> {
+	private async performClose(graceMs: number): Promise<void> {
 		this.closing = true;
 		const child = this.child;
 		if (!child) {
@@ -615,7 +622,7 @@ export class OmpTransport {
 			/* já fechado */
 		}
 		const exited = this.exited ?? child.exited;
-		const ended = await waitForExit(exited, 10_000);
+		const ended = await waitForExit(exited, graceMs);
 		if (!ended) {
 			const identity = this.identity ? await this.identity : undefined;
 			const killed = identity ? await killProcessTree(identity) : false;
