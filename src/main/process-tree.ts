@@ -235,17 +235,15 @@ export async function captureProcessIdentity(
 }
 
 /**
- * Confere uma identidade contra um snapshot do SO. No Linux a hora de criação
- * (`starttime`) é obrigatória: nome de executável sozinho não distingue um PID
- * reciclado. No Windows a criação é preferida e o nome é o fallback histórico.
+ * Confere uma identidade contra um snapshot do SO. No Linux e no Windows a
+ * hora de criação é obrigatória: nome de executável sozinho não distingue um
+ * PID reciclado (outro `bun.exe`/`omp.exe` teria o mesmo nome). Sem criação
+ * capturada/conferível, o chamador usa o handle do spawn em vez de sinalizar.
  */
 function identityMatchesDetails(identity: ProcessIdentity, details: ProcessDetails | undefined): boolean {
 	if (!details?.exists) return false;
-	if (process.platform === "linux") {
+	if (process.platform === "linux" || process.platform === "win32") {
 		if (identity.creationTimeMs === undefined || details.creationTimeMs === undefined) return false;
-		return Math.abs(details.creationTimeMs - identity.creationTimeMs) <= CREATION_TIME_TOLERANCE_MS;
-	}
-	if (identity.creationTimeMs !== undefined && details.creationTimeMs !== undefined) {
 		return Math.abs(details.creationTimeMs - identity.creationTimeMs) <= CREATION_TIME_TOLERANCE_MS;
 	}
 	if (identity.executableName && details.name) {
@@ -264,18 +262,6 @@ async function matchesPidCreation(pid: number, creationTimeMs: number | undefine
 	if (creationTimeMs === undefined) return false;
 	const details = await readProcessDetails(pid).catch(() => undefined);
 	return identityMatchesDetails({ pid, startedAt: 0, creationTimeMs }, details);
-}
-
-async function listWindowsDescendants(rootPid: number): Promise<number[]> {
-	const script =
-		'Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
-	const result = await runCommand(
-		powershellPath(),
-		["-NoProfile", "-NonInteractive", "-Command", script],
-		15_000,
-	);
-	if (result.code !== 0) return [];
-	return parseDescendants(rootPid, result.stdout);
 }
 
 interface DescendantDetails {
@@ -364,26 +350,11 @@ function descendantsFromPairs(rootPid: number, pairs: Array<[number, number]>): 
 
 async function killWindowsTree(identity: ProcessIdentity, force: boolean): Promise<boolean> {
 	const forceFlag = force ? ["/F"] : [];
-	// Caminho rápido: `taskkill /T` encerra a árvore numa única chamada. A
-	// varredura de descendentes (PowerShell/CIM, lenta em runners frios) fica
-	// como fallback para quando a raiz sobrevive — por exemplo, um filho
-	// reparentado durante a saída. A identidade já foi conferida em
-	// `killProcessTree` imediatamente antes desta chamada.
-	const direct = await runCommand("taskkill.exe", [
-		"/T",
-		...forceFlag,
-		"/PID",
-		String(identity.pid),
-	]);
-	if (direct.code === 0 || !isProcessRunning(identity.pid)) return true;
-	// Fallback: filhos primeiro, depois a raiz, reconferindo a identidade
-	// depois da varredura para não sinalizar um PID reciclado.
-	const descendants = await listWindowsDescendants(identity.pid);
-	for (const pid of descendants) {
-		await runCommand("taskkill.exe", ["/T", ...forceFlag, "/PID", String(pid)]);
-	}
-	const stillOurs = await matchesIdentity(identity);
-	if (!stillOurs) return !isProcessRunning(identity.pid);
+	// `taskkill /T` encerra a árvore numa única chamada. Se falhar, NÃO
+	// varremos descendentes por PID cru: entre a varredura e o sinal o PID
+	// pode ter sido reutilizado e um processo alheio receberia o taskkill.
+	// O chamador cai no handle seguro deste spawn (`child.kill()`), que
+	// encerra a raiz; filhos reparentados podem sobreviver (limite declarado).
 	const result = await runCommand("taskkill.exe", [
 		"/T",
 		...forceFlag,
