@@ -13,6 +13,7 @@ interface SignalCall {
 const calls: ExecCall[] = [];
 const signals: SignalCall[] = [];
 const fileTime = 133_444_736_000_000_000;
+let rootReused = false;
 
 // Este arquivo roda em um processo Bun filho (não é descoberto como teste):
 // `mock.module` do Bun não é isolado por arquivo, então os mocks de
@@ -28,10 +29,15 @@ mock.module("node:child_process", () => ({
 		calls.push({ file, args });
 		const lower = file.toLowerCase();
 		if (lower.includes("powershell")) {
-			callback(null, `${fileTime}|bun\n`, "");
+			if (args.some((arg) => arg.includes("Get-CimInstance"))) {
+				callback(null, "5353 4242\n", "");
+			} else {
+				callback(null, `${fileTime + (rootReused ? 600_000_000 : 0)}|bun\n`, "");
+			}
 			return;
 		}
 		if (lower.includes("taskkill")) {
+			rootReused = true;
 			const error = new Error("acesso negado") as Error & { code?: number };
 			error.code = 1;
 			callback(error, "", "");
@@ -50,6 +56,7 @@ const originalKill = process.kill;
 afterAll(() => {
 	Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
 	process.kill = originalKill;
+	console.log("PROCESS_TREE_WINDOWS_CASES_OK");
 });
 
 function stubWindows(): void {
@@ -70,6 +77,7 @@ function stubWindows(): void {
 test("falha do taskkill não sinaliza descendentes de um PID possivelmente reciclado", async () => {
 	calls.length = 0;
 	signals.length = 0;
+	rootReused = false;
 	stubWindows();
 	const identity = {
 		pid: 4242,
@@ -81,18 +89,18 @@ test("falha do taskkill não sinaliza descendentes de um PID possivelmente recic
 
 	expect(killed).toBe(false);
 	const taskkills = calls.filter((call) => call.file.toLowerCase().includes("taskkill"));
-	expect(taskkills).toHaveLength(1);
-	expect(taskkills[0]?.args).toContain("/PID");
-	expect(taskkills[0]?.args).toContain("4242");
-	// O fallback antigo consultava Win32_Process e sinalizava os filhos por
-	// PID cru antes de revalidar a raiz; nada disso pode acontecer.
-	expect(calls.some((call) => call.args.join(" ").includes("Get-CimInstance"))).toBe(false);
+	const signaledPids = taskkills.map((call) => call.args[call.args.indexOf("/PID") + 1]);
+	expect(signaledPids).toContain("4242");
+	// A falha troca a criação da raiz. A consulta seguinte apontaria um filho
+	// do processo que reutilizou o PID; esse filho não pertence ao aplicativo.
+	expect(signaledPids).not.toContain("5353");
 	expect(signals).toEqual([]);
 });
 
 test("identidade sem criação não sinaliza nem por nome de executável", async () => {
 	calls.length = 0;
 	signals.length = 0;
+	rootReused = false;
 	stubWindows();
 	// O mock do PowerShell devolve criação + nome "bun"; o nome sozinho não
 	// pode autorizar o sinal quando a captura original não trouxe criação.
@@ -104,6 +112,3 @@ test("identidade sem criação não sinaliza nem por nome de executável", async
 	expect(signals).toEqual([]);
 });
 
-test("casos isolados concluídos", () => {
-	console.log("PROCESS_TREE_WINDOWS_CASES_OK");
-});
