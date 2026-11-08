@@ -48,6 +48,22 @@ describe("sanitizeForRenderer", () => {
 		expect(output.message.content[1]?.arguments).toEqual(content);
 	});
 
+	test("preserva resultados profundos sem expor credenciais de transporte", () => {
+		let details: unknown = { text: "resultado íntegro á🚀", apiKey: "chave lida em um arquivo" };
+		for (let index = 0; index < 30; index++) details = { nested: details };
+		const input = {
+			state: {
+				messages: [{ content: [{ type: "toolCall", arguments: details }] }],
+				tools: { read: { details } },
+				apiKey: "credencial de transporte",
+			},
+		};
+		const output = sanitizeForRenderer(input);
+		expect(output.state.messages).toEqual(input.state.messages);
+		expect(output.state.tools.read.details).toEqual(details);
+		expect("apiKey" in output.state).toBe(false);
+	});
+
 	test("remove transporte e redige credenciais em baseUrl", () => {
 		const output = sanitizeForRenderer({
 			providerPayload: { raw: true },

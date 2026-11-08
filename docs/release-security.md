@@ -1,15 +1,15 @@
-# Dependency security — 0.3.0
+# Dependency security — 0.3.1
 
-Review: November 7, 2026. Next review of the exceptions: December 7, 2026, or
+Review: November 8, 2026. Next review of the exceptions: December 8, 2026, or
 earlier if an OMP or packager update changes the paths described below.
 
 ## Applied fix
 
 Monaco 0.57.0 includes DOMPurify 3.4.15 both as a dependency and as an internal
-copy. Version 0.3.0 pins DOMPurify to **3.4.17** in the lockfile and redirects
-Monaco's internal import to that same version in Vite. The fix is therefore not
-limited to changing the package manager result: the renderer also uses the fixed
-code.
+copy. Version 0.3.1 keeps the 0.3.0 fix: DOMPurify is pinned to **3.4.17** in the
+lockfile, and Monaco's internal import is redirected to that same version in
+Vite. The fix is therefore not limited to changing the package manager result:
+the renderer also uses the fixed code.
 
 References: [GHSA-cg2g-xh64-v4q7](https://github.com/advisories/GHSA-cg2g-xh64-v4q7),
 [GHSA-mrv2-3pqr-j5jr](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr).
@@ -70,11 +70,38 @@ the payload contains no private-key-shaped material at all, because the upstream
 debug constants are exactly that. The final gate must still verify zero real
 credentials.
 
+## Release artifact gate (0.3.1)
+
+The 0.3.1 artifacts are built from the frozen release commit, and the gate
+records that commit before packaging. The gate verifies the packaged
+`@oh-my-pi/pi-coding-agent` files against the SHA-256 values in the table above;
+a mismatch blocks the release instead of being waived.
+
+The artifact scan covers the NSIS installer, `win-unpacked`, and the installed
+tree. It checks for user names, host names, home and checkout paths, owner
+e-mail addresses, credential-shaped strings, and forbidden files (`.env`,
+credentials, private keys, `builder-debug.yml`, blockmaps, logs, and build
+caches). Findings are allowlisted by origin and file hash, never by ignoring a
+pattern in general. The Electron/Chromium binary contains private-key-shaped and
+access-key-shaped byte patterns inherited from the upstream runtime; they are
+not user credentials and are recorded by hash in the gate evidence. The packaged
+OMP debug material is the upstream material described above, also allowlisted by
+file hash.
+
+Linux packages are built from the same frozen source; their checksums are
+consolidated with the Windows installer into the global `SHA256SUMS`.
+
+The gate does not claim an audit with no findings. It confirms that the payload
+contains no real user credentials, tokens, or account data and that the public
+artifacts match the frozen source and the published `SHA256SUMS`.
+
 ## Optional tool installers
 
-Git and Node.js LTS are optional and are installed only after an explicit
-confirmation in the app. The renderer cannot supply a URL, version, or command:
-sources, versions, destinations, and arguments are fixed in the main process.
+Git and Node.js LTS are optional. On Windows, both are installed only after an
+explicit confirmation in the app; on Linux, the app installs Node.js only and
+shows the fixed Git command for the user's package manager. The renderer cannot
+supply a URL, version, or command: sources, versions, destinations, and arguments
+are fixed in the main process.
 
 ### Git (Changes panel)
 
@@ -90,6 +117,13 @@ sources, versions, destinations, and arguments are fixed in the main process.
   persistent user or system PATH changes. A compatible global Git on PATH is
   adopted as-is; an incompatible or partial managed folder is reported, not
   overwritten.
+
+**Linux:** Git is native and is **not** installed by the app. No MinGit
+download, no `sudo`, no `apt`, no `pacman`, and no password collection. The app
+shows the fixed command for the user to run in their own terminal —
+`sudo apt install git` on Debian/Ubuntu or `sudo pacman -S git` on Arch — and
+re-probes with **Check again**. Manual reference:
+<https://git-scm.com/download/linux>.
 
 ### Node.js LTS (projects/MCP)
 
@@ -108,24 +142,40 @@ sources, versions, destinations, and arguments are fixed in the main process.
   system PATH changes. A compatible global Node.js on PATH is adopted as-is; an
   incompatible or partial managed folder is reported, not overwritten.
 
+**Linux:** the same LTS resolution uses the official `linux-x64` TAR.GZ
+(`node-v<version>-linux-x64.tar.gz`) and the official `SHASUMS256.txt`. The
+archive is read with a TAR reader that accepts only relative symlinks and
+rejects traversal or oversized entries. Destination:
+`$XDG_DATA_HOME/omp-desktop/tools/node` when `XDG_DATA_HOME` is absolute, else
+`$HOME/.local/share/omp-desktop/tools/node`; only `<tools>/node/bin` is added to
+the app process PATH. The official binary requires `libatomic.so.1`
+(`libatomic1` on Debian/Ubuntu, `libatomic` from `gcc-libs` on Arch); if it is
+missing, the app reports `MISSING_SYSTEM_LIBRARY` with the package command and
+does not activate the tool. No system package is installed by the app.
+
 Both installers stream with size caps, use a temporary directory and atomic
 promotion, never overwrite an existing file, and abort/clean up on cancellation
 or app close. Network access is limited to the official Git for Windows release
 hosts (`github.com` / `release-assets.githubusercontent.com`) and `nodejs.org`
 over TLS. No user credentials are sent. The Node.js version is deliberately not
-pinned forever: it is the current LTS at install time.
+pinned forever: it is the current LTS at install time. On Linux, the Git
+network path is unused.
 
 ## Reproducible verification
 
 The optional OMP installer contacts `https://build.stencil.so` (the official build
-service used by OMP's Windows installer), downloads the pinned 18.16.0 binary,
-verifies the SHA-256 returned by that service, and runs `omp.exe --version`
-before activation. It writes to `%LOCALAPPDATA%\omp` (or `PI_INSTALL_DIR`) and
-never overwrites an existing `omp.exe`. It does not modify the persistent user
+service used by OMP's installers), downloads the pinned 18.16.0 binary for the
+current platform, verifies the SHA-256 returned by that service, and runs
+`omp.exe --version` (Windows) or `omp --version` (Linux) before activation. It
+writes to `%LOCALAPPDATA%\omp` on Windows or `$HOME/.local/bin/omp` on Linux (or
+`PI_INSTALL_DIR`), marks the Linux binary executable (0755), and never
+overwrites an existing OMP executable. It does not modify the persistent user
 PATH or the registry and does not touch `~/.omp`; the app stores the absolute
 path in its own runtime state and adds the folder only to the PATH of its own
 processes. The renderer cannot supply a URL or command. No user credentials are
 sent in this flow.
+
+Windows:
 
 ```powershell
 bun install --frozen-lockfile --ignore-scripts
@@ -136,9 +186,36 @@ bun run test:acceptance
 bun run dist:win
 ```
 
-The installer is not signed. Verify its origin on GitHub Releases and compare the
-SHA-256 with `SHA256SUMS.txt`. Do not disable antivirus or SmartScreen to bypass
-an alert.
+Linux (x86_64):
+
+```bash
+bun install --frozen-lockfile
+node node_modules/electron/install.js   # only if lifecycle scripts were skipped
+bun run typecheck
+bun run test
+bun run test:acceptance
+bun run dist:linux                      # .deb + .tar.gz (+ Arch package when makepkg exists)
+cd release && sha256sum -c SHA256SUMS
+```
+
+The Linux build downloads the official Bun 1.4.4 baseline ZIP once, verifies its
+SHA-256 (`e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76`)
+and the extracted binary, and writes `resources/bun/bun` with mode 0755. The
+`.deb` declares its Electron dependencies, including `libgtk-3-0`/`libgtk-3-0t64`,
+`libasound2`/`libasound2t64`, and `libatomic1`; Git is only a `Suggests`. The
+Arch PKGBUILD consumes the local `OMP-Desktop-0.3.1-linux-x64.tar.gz` and
+verifies it against a trusted SHA-256 from `OMP_DESKTOP_ARCHIVE_SHA256`,
+`release/SHA256SUMS`, or `<archive>.sha256`; it aborts if none is available. It
+does not treat a hash computed from the artifact as verification. There is no
+`SKIP` and no URL to a release that does not exist. Both packages install
+`chrome-sandbox` with mode 4755 (the `.deb` also uses an AppArmor profile on
+Ubuntu 24.04+) and the app never runs with `--no-sandbox`.
+
+Neither the Windows installer nor the Linux packages are signed. Verify the
+origin and compare the SHA-256 with `SHA256SUMS`. Do not
+disable antivirus, SmartScreen, AppArmor, or the sandbox to bypass an alert.
+Linux packages are built locally and published as release assets in 0.3.1;
+verify `SHA256SUMS` before installing.
 
 To report a vulnerability without publishing sensitive data, see
 [SECURITY.md](../SECURITY.md).

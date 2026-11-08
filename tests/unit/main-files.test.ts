@@ -1,8 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { readWorkspaceFile, externalOpenMode, resolveFileForExternalOpen } from "../../src/main/files";
+import {
+	readWorkspaceFile,
+	externalOpenMode,
+	isExecutableFile,
+	resolveFileForExternalOpen,
+} from "../../src/main/files";
 import { PathValidationError } from "../../src/main/paths";
 
 const root = await mkdtemp(path.join(tmpdir(), "omp-files-"));
@@ -99,4 +104,18 @@ describe("files.read", () => {
 			expect(externalOpenMode(dangerous)).toBe("reveal");
 		}
 	});
+
+	if (process.platform !== "win32") {
+		test("POSIX revela scripts de shell e qualquer arquivo executável", async () => {
+			for (const script of ["script.sh", "script.bash", "script.zsh", "script.fish", "script.command", "script.run"]) {
+				expect(externalOpenMode(script)).toBe("reveal");
+			}
+			const executable = path.join(root, "texto-executavel.txt");
+			await writeFile(executable, "#!/bin/sh\necho oi\n");
+			await chmod(executable, 0o755);
+			expect(await isExecutableFile(executable)).toBe(true);
+			await chmod(executable, 0o644);
+			expect(await isExecutableFile(executable)).toBe(false);
+		});
+	}
 });

@@ -274,7 +274,7 @@ test("diagnóstico embutido atualiza o checklist ao escolher outro OMP", async (
 	await l.app.evaluate(({ dialog }, file) => {
 		dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
 	}, alternative);
-	await diagnostics.getByRole("button", { name: "Selecionar OMP" }).click();
+	await diagnostics.getByRole("button", { name: /Selecionar.*OMP/i }).click();
 	// Selecionar outro executável reinicia o host; a introdução volta à
 	// primeira etapa. Retome o ambiente e confira o checklist atualizado.
 	await expect(p.getByRole("heading", { name: /o OMP, agora com janela/i })).toBeVisible({

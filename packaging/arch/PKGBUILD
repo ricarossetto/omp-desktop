@@ -1,0 +1,143 @@
+# Maintainer: OMP Desktop contributors <omp-desktop@users.noreply.github.com>
+#
+# Pacote local (não publicado no AUR). A fonte é o tar.gz Linux x64 produzido
+# por `bun scripts/dist-linux.ts`. O checksum confiável vem de
+# OMP_DESKTOP_ARCHIVE_SHA256 (obrigatório com OMP_DESKTOP_ARCHIVE) ou do
+# SHA256SUMS gerado pelo dist-linux; o PKGBUILD não calcula o checksum da
+# mesma fonte como autenticação. Não há checksum SKIP nem URL de release
+# inexistente.
+#
+# Uso como usuário não-root, na raiz do repositório:
+#   bun run build && bun scripts/dist-linux.ts --no-arch
+#   cd packaging/arch && makepkg -f
+#
+# O dist-linux também executa o makepkg automaticamente quando ele existe e
+# copia o .pkg.tar.zst para release/. Para usar outro artefato:
+#   OMP_DESKTOP_ARCHIVE=/caminho/OMP-Desktop-0.3.1-linux-x64.tar.gz \
+#   OMP_DESKTOP_ARCHIVE_SHA256=<sha256> makepkg -f
+
+pkgname=omp-desktop
+pkgver=0.3.1
+pkgrel=1
+pkgdesc="Unofficial desktop client for the OMP coding agent"
+arch=('x86_64')
+url="https://github.com/ricarossetto/omp-desktop"
+license=('MIT')
+depends=(
+	'gtk3'
+	'nss'
+	'libxss'
+	'libxtst'
+	'at-spi2-core'
+	'libsecret'
+	'libnotify'
+	'xdg-utils'
+	'mesa'
+	'libatomic'
+	'alsa-lib'
+	'util-linux'
+)
+optdepends=(
+	'git: version control integration'
+	'nodejs: optional Node.js runtime for OMP tools'
+)
+options=(!strip !debug !buildflags)
+install=omp-desktop.install
+
+_archive_name="OMP-Desktop-${pkgver}-linux-x64.tar.gz"
+_archive="$startdir/$_archive_name"
+
+if [[ -n "${OMP_DESKTOP_ARCHIVE:-}" ]]; then
+	if [[ -z "${OMP_DESKTOP_ARCHIVE_SHA256:-}" ]]; then
+		error "OMP_DESKTOP_ARCHIVE_SHA256 é obrigatório ao usar OMP_DESKTOP_ARCHIVE."
+		exit 1
+	fi
+	_candidate="$(realpath -m -- "$OMP_DESKTOP_ARCHIVE")" || {
+		error "Caminho inválido para OMP_DESKTOP_ARCHIVE: $OMP_DESKTOP_ARCHIVE"
+		exit 1
+	}
+	if [[ ! -f "$_candidate" ]]; then
+		error "Artefato não encontrado: $_candidate"
+		exit 1
+	fi
+	# Sempre recria o link: um symlink antigo não pode vencer o artefato pedido.
+	ln -sfn -- "$_candidate" "$_archive" || {
+		error "Não foi possível criar o link para $_candidate."
+		exit 1
+	}
+elif [[ -L "$_archive" || ! -e "$_archive" ]]; then
+	_candidate="$(realpath -m -- "$startdir/../../release/$_archive_name")" || {
+		error "Caminho inválido para o artefato padrão em release/."
+		exit 1
+	}
+	if [[ ! -f "$_candidate" ]]; then
+		error "Artefato não encontrado: $_candidate. Execute 'bun scripts/dist-linux.ts --no-arch' na raiz do repositório."
+		exit 1
+	fi
+	ln -sfn -- "$_candidate" "$_archive" || {
+		error "Não foi possível criar o link para $_candidate."
+		exit 1
+	}
+fi
+
+_sha256="${OMP_DESKTOP_ARCHIVE_SHA256:-}"
+if [[ -z "$_sha256" ]]; then
+	_sums="$startdir/../../release/SHA256SUMS"
+	if [[ -f "$_sums" ]]; then
+		_sha256="$(awk -v name="$_archive_name" '$2 == name { print $1; exit }' "$_sums")"
+	fi
+fi
+if [[ -z "$_sha256" && -f "${_archive}.sha256" ]]; then
+	_sha256="$(cut -d' ' -f1 "${_archive}.sha256")"
+fi
+if [[ ! "$_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+	error "Checksum SHA-256 confiável ausente para $_archive. Passe OMP_DESKTOP_ARCHIVE_SHA256 ou execute bun scripts/dist-linux.ts."
+	exit 1
+fi
+
+source=("$_archive_name" "omp-desktop.desktop")
+sha256sums=(
+	"$_sha256"
+	'3463dee40f263c4a59b79d601c6759e07ef8d23e9483e60fccf6e086321890bc'
+)
+
+package() {
+	local appdir=""
+	local candidate
+	for candidate in "$srcdir/OMP-Desktop-${pkgver}-linux-x64" "$srcdir"; do
+		if [[ -x "$candidate/omp-desktop" ]]; then
+			appdir="$candidate"
+			break
+		fi
+	done
+	if [[ -z "$appdir" ]]; then
+		error "Diretório do aplicativo não encontrado em $srcdir."
+		return 1
+	fi
+
+	install -dm755 -- "$pkgdir/opt/omp-desktop"
+	cp -a -- "${appdir:?}/." "$pkgdir/opt/omp-desktop/"
+	# O conjunto de ícones é instalado no hicolor; não precisa duplicar em /opt.
+	rm -rf -- "$pkgdir/opt/omp-desktop/resources/icons"
+
+	install -dm755 -- "$pkgdir/usr/bin"
+	ln -s -- /opt/omp-desktop/omp-desktop "$pkgdir/usr/bin/omp-desktop"
+
+	install -Dm644 -- "$srcdir/omp-desktop.desktop" \
+		"$pkgdir/usr/share/applications/omp-desktop.desktop"
+
+	local size
+	for size in 16 24 32 48 64 128 256 512 1024; do
+		install -Dm644 -- "$appdir/resources/icons/${size}x${size}.png" \
+			"$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/omp-desktop.png"
+	done
+
+	install -Dm644 -- "$appdir/resources/licenses/LICENSE" \
+		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	install -Dm644 -- "$appdir/resources/licenses/NOTICE.txt" \
+		"$pkgdir/usr/share/licenses/$pkgname/NOTICE.txt"
+
+	# Electron precisa do helper setuid quando user namespaces não estão
+	# disponíveis. Nunca usamos um wrapper com --no-sandbox.
+	chmod 4755 -- "$pkgdir/opt/omp-desktop/chrome-sandbox"
+}

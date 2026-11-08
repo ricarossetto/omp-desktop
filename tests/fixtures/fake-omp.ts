@@ -15,6 +15,12 @@
  *       FAKE_OMP_SESSION_FILE=<caminho .jsonl>
  *       FAKE_OMP_SESSION_ID=<id fixo; padrão derivado do --resume>
  *       FAKE_OMP_ENTRIES=<json com {entries,leafId}>
+ *       FAKE_OMP_ENTRIES_FAIL=1 (host cai no paginado) | frame_too_large (falha explícita, sem fallback)
+ *       FAKE_OMP_PAGE_SIZE=<n>   (get_messages_page pagina em N mensagens por cursor)
+ *       FAKE_OMP_PAGE_REPEAT_CURSOR=1   (repete o cursor; testa a detecção do host)
+ *       FAKE_OMP_PAGE_TOTAL_MISMATCH=1  (totalMessages inconsistente)
+ *       FAKE_OMP_PAGE_EMPTY=1           (página vazia com cursor)
+ *       FAKE_OMP_PAGE_INCOMPLETE=1      (termina antes do total, sem cursor)
  *       FAKE_OMP_RECORD=<arquivo onde registrar prompts, diálogos e chamadas CLI>
  *       FAKE_OMP_PROTOCOL=1   (força v1)
  *       FAKE_OMP_MAX_FRAME=<bytes>
@@ -28,6 +34,7 @@ import { YAML } from "bun";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+
 
 if (process.argv.includes("--version")) {
 	console.log("omp/18.16.0");
@@ -453,6 +460,50 @@ try {
 } catch {
 	/* sem arquivo */
 }
+
+interface FixtureHistory {
+	entries: Record<string, unknown>[];
+	messages: unknown[];
+	leafId: string | null;
+}
+
+/**
+ * FAKE_OMP_ENTRIES é o branch inicial do OMP. As mensagens vivas (prompt,
+ * toolResult, assistant) entram em `history`, e get_entries/get_messages_page
+ * as concatenam ao fixture: o OMP real devolve o branch completo depois de um
+ * turno, não só o arquivo inicial.
+ */
+function loadFixtureHistory(): FixtureHistory | undefined {
+	const file = process.env.FAKE_OMP_ENTRIES;
+	if (!file) return undefined;
+	try {
+		// Arquivo sintético produzido pelos testes; sem dependências do checkout,
+		// pois esta fixture também é copiada para diretórios temporários.
+		const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as {
+			entries?: FixtureHistory["entries"];
+			leafId?: unknown;
+		};
+		if (!parsed || !Array.isArray(parsed.entries)) return undefined;
+		const entries = parsed.entries.filter(
+			(entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry),
+		);
+		const messages = entries
+			.filter((entry) => entry.type === "message" && typeof entry.message === "object" && entry.message !== null && !Array.isArray(entry.message))
+			.map((entry) => entry.message);
+		const last = entries[entries.length - 1];
+		const leafId =
+			typeof parsed.leafId === "string"
+				? parsed.leafId
+				: last && typeof last.id === "string"
+					? last.id
+					: null;
+		return { entries, messages, leafId };
+	} catch {
+		return undefined;
+	}
+}
+
+const fixtureHistory = loadFixtureHistory();
 const queue: { steering: string[]; followUp: string[] } = { steering: [], followUp: [] };
 if (scenario === "virtual-scroll") {
 	for (let index = 0; index < 600; index++) {
@@ -466,7 +517,15 @@ if (scenario === "virtual-scroll") {
 		});
 	}
 }
-async function sendFrame(frame: unknown): Promise<void> {
+/**
+ * Fila de escrita: um frame grande vira vários `rpc_chunk`, e chunks de frames
+ * diferentes não podem se intercalar (o transporte do OMP trata a sequência
+ * interrompida como frame inválido e encerra a sessão). O histórico é
+ * atualizado na chamada; só a serialização entra na fila.
+ */
+let writeQueue: Promise<void> = Promise.resolve();
+
+function sendFrame(frame: unknown): Promise<void> {
 	{
 		const f = frame as { type?: string; message?: unknown } | null;
 		if (f?.type === "message_end" && f.message) {
@@ -474,6 +533,12 @@ async function sendFrame(frame: unknown): Promise<void> {
 			persistMessage(f.message);
 		}
 	}
+	const task = writeQueue.then(() => writeFrame(frame));
+	writeQueue = task.catch(() => undefined);
+	return task;
+}
+
+async function writeFrame(frame: unknown): Promise<void> {
 	const json = JSON.stringify(frame);
 	const bytes = Buffer.byteLength(json, "utf8") + 1;
 	if (negotiated && bytes > maxFrameBytes) {
@@ -912,14 +977,28 @@ async function handleCommand(command: Record<string, unknown>): Promise<void> {
 			});
 			return;
 		case "get_entries": {
-			const entriesFile = process.env.FAKE_OMP_ENTRIES;
-			if (entriesFile) {
-				try {
-					success(id, type, JSON.parse(fs.readFileSync(entriesFile, "utf8")));
-					return;
-				} catch {
-					/* cai no vazio */
-				}
+			const entriesFailure = process.env.FAKE_OMP_ENTRIES_FAIL;
+			if (entriesFailure === "1") {
+				failure(id, type, "get_entries indisponível (fake)");
+				return;
+			}
+			if (entriesFailure === "frame_too_large") {
+				failure(id, type, "transport limit: frame too large", "frame_too_large");
+				return;
+			}
+			if (fixtureHistory) {
+				const live = history.map((message, index) => ({
+					type: "message",
+					id: `live-${index + 1}`,
+					parentId: index === 0 ? fixtureHistory.leafId : `live-${index}`,
+					timestamp: new Date().toISOString(),
+					message,
+				}));
+				const entries = [...fixtureHistory.entries, ...live];
+				const last = entries[entries.length - 1];
+				const leafId = last && typeof last.id === "string" ? last.id : fixtureHistory.leafId;
+				success(id, type, { entries, leafId });
+				return;
 			}
 			{
 				const entries = history.map((message, index) => ({
@@ -933,9 +1012,50 @@ async function handleCommand(command: Record<string, unknown>): Promise<void> {
 			}
 			return;
 		}
-		case "get_messages_page":
-			success(id, type, { messages: history, totalMessages: history.length });
+		case "get_messages_page": {
+			const messages = fixtureHistory ? [...fixtureHistory.messages, ...history] : history;
+			const pageSize = Number(process.env.FAKE_OMP_PAGE_SIZE ?? 0);
+			const totalMessages =
+				process.env.FAKE_OMP_PAGE_TOTAL_MISMATCH === "1" ? messages.length + 1 : messages.length;
+			if (!Number.isSafeInteger(pageSize) || pageSize <= 0) {
+				success(id, type, { messages, totalMessages });
+				return;
+			}
+			const cursor = typeof command.cursor === "string" ? command.cursor : undefined;
+			const offset = cursor === undefined ? 0 : Number(cursor);
+			if (!Number.isSafeInteger(offset) || offset < 0) {
+				failure(id, type, "cursor inválido", "invalid_cursor");
+				return;
+			}
+			if (process.env.FAKE_OMP_PAGE_REPEAT_CURSOR === "1") {
+				success(id, type, {
+					messages: messages.slice(0, pageSize),
+					totalMessages,
+					nextCursor: "stuck",
+				});
+				return;
+			}
+			if (process.env.FAKE_OMP_PAGE_EMPTY === "1" && offset > 0) {
+				success(id, type, {
+					messages: [],
+					totalMessages,
+					nextCursor: String(offset + pageSize),
+				});
+				return;
+			}
+			const page = messages.slice(offset, offset + pageSize);
+			const hasMore = offset + pageSize < messages.length;
+			const nextCursor =
+				hasMore && process.env.FAKE_OMP_PAGE_INCOMPLETE !== "1"
+					? String(offset + pageSize)
+					: undefined;
+			success(id, type, {
+				messages: page,
+				totalMessages,
+				...(nextCursor ? { nextCursor } : {}),
+			});
 			return;
+		}
 		case "get_subagents":
 			success(id, type, {
 				subagents:

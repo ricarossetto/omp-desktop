@@ -35,6 +35,11 @@ export type DependencyInstallPhase = (typeof DEPENDENCY_INSTALL_PHASES)[number];
  *   fora da pasta de extração, symlink ou limite de tamanho excedido.
  * - `VERSION_MISMATCH` / `PROBE_FAILED`: `--version` do executável extraído
  *   não confere ou não executou.
+ * - `MANUAL_INSTALL_REQUIRED`: no Linux o Git é nativo; o aplicativo nunca
+ *   baixa MinGit nem executa sudo. A UI mostra o comando fixo da distribuição.
+ * - `MISSING_SYSTEM_LIBRARY`: o binário oficial não iniciou por falta de uma
+ *   biblioteca do sistema (por exemplo `libatomic.so.1` no Node Linux). A UI
+ *   mostra o pacote nativo correspondente e permite nova sondagem.
  * - `ABORTED`: cancelamento do usuário/fechamento do aplicativo.
  * - `INTERNAL`: falha inesperada sem detalhe seguro para o usuário.
  *
@@ -55,10 +60,23 @@ export const DEPENDENCY_ERROR_CODES = [
 	"INCOMPLETE_INSTALL",
 	"VERSION_MISMATCH",
 	"PROBE_FAILED",
+	"MANUAL_INSTALL_REQUIRED",
+	"MISSING_SYSTEM_LIBRARY",
 	"ABORTED",
 	"INTERNAL",
 ] as const;
 export type DependencyErrorCode = (typeof DEPENDENCY_ERROR_CODES)[number];
+
+/**
+ * Comandos fixos exibidos (e copiados) pela UI para instalar o Git nativo no
+ * Linux. O aplicativo NUNCA os executa, nunca coleta senha e nunca chama sudo:
+ * o usuário escolhe a distribuição e roda o comando no próprio terminal.
+ */
+export const NATIVE_GIT_COMMANDS = {
+	debian: "sudo apt install git",
+	arch: "sudo pacman -S git",
+} as const;
+export type NativeGitDistro = keyof typeof NATIVE_GIT_COMMANDS;
 
 export interface DependencyInstallProgress {
 	phase: DependencyInstallPhase;

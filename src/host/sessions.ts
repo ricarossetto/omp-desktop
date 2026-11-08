@@ -7,8 +7,10 @@
  *   `listSessionsReadOnly` + `FileSessionStorage` (sem parser JSONL próprio).
  * - `session.open` só aceita caminho presente no inventário daquele workspace.
  * - Snapshot idle lê estado, comandos, níveis, estatísticas, agentes e
- *   histórico por `get_entries` (entryId durável) com fallback paginado por
- *   `get_messages_page`. Frames recebidos durante a leitura são bufferizados.
+ *   histórico completo por `get_entries` (entryId durável) com fallback
+ *   paginado por `get_messages_page`. O histórico NÃO é compactado: o wire
+ *   fragmenta a linha física e o HostClient remonta o payload. Frames
+ *   recebidos durante a leitura são bufferizados.
  * - Queda do OMP marca a sessão como interrompida, preserva o transcript e
  *   NUNCA reenvia prompt.
  * - Abas persistidas em JSON atômico; restaurar não dispara prompt.
@@ -40,7 +42,7 @@ import type {
 } from "../shared/session-types";
 import type { AttachmentStore } from "./attachments";
 import { commandFits } from "./attachments";
-import { capValue, compactHistory, compactSnapshot, MAX_EVENT_BYTES } from "./limits";
+import { capValue, MAX_EVENT_BYTES } from "./limits";
 import type { HostLogger } from "./log";
 import { writeFileAtomic } from "./log";
 import { parseJsonOutput, resolveOmpPath, runOmp, type RunOmpResult } from "./omp-cli";
@@ -57,6 +59,22 @@ import {
 } from "./subagents";
 import type { WorkspaceStore } from "./workspaces";
 import { pathKey } from "./workspaces";
+
+/** Eventos que carregam histórico/replay: não passam pelo teto destrutivo. */
+const HISTORY_EVENTS: Record<string, true> = {
+	desktop_history: true,
+	desktop_snapshot: true,
+};
+
+/** Respostas RPC que carregam histórico: também atravessam sem teto. */
+const HISTORY_RPC_COMMANDS: Record<string, true> = {
+	get_entries: true,
+	get_messages: true,
+	get_messages_page: true,
+	get_branch_messages: true,
+	get_tree: true,
+	get_subagent_messages: true,
+};
 
 /** Timeout específico para comandos que legitimamente demoram. */
 const LONG_RPC_TIMEOUT_MS: Record<string, number> = {
@@ -603,10 +621,12 @@ export class SessionsService {
 	private emitEvent(session: HostSession, name: string, data: unknown): void {
 		const sequence = this.nextSequence(session);
 		// Toda data de evento passa pela projeção com remoção de campos de dump no
-		// topo (`systemPrompt`/`dumpTools` de get_state), conteúdo intacto, e por
-		// um teto de tamanho: nenhuma linha do protocolo chega perto de 64 MiB.
+		// topo (`systemPrompt`/`dumpTools` de get_state) e conteúdo intacto.
+		// Histórico/snapshot atravessam sem teto: o writer fragmenta a linha
+		// física e o HostClient remonta o payload lógico. Eventos pequenos e
+		// frames live mantêm o teto por evento.
 		const projected = name === "frame" ? sanitizeFrame(data) : sanitizeRpcResult(data);
-		const safeData = capValue(projected, MAX_EVENT_BYTES);
+		const safeData = HISTORY_EVENTS[name] === true ? projected : capValue(projected, MAX_EVENT_BYTES);
 		const event: DesktopEvent = {
 			kind: "event",
 			workspaceId: session.workspaceId,
@@ -707,7 +727,9 @@ export class SessionsService {
 			}
 			if (emit) this.emitEvent(session, "frame", frame);
 			else {
-				// Inclui no snapshot sem emitir: o renderer recebe o estado já pronto.
+				// Inclui no snapshot sem emitir: o renderer recebe o estado já
+				// pronto. O snapshot é replay e não pode perder conteúdo, então
+				// não aplica o teto destrutivo dos frames live.
 				const sequence = this.nextSequence(session);
 				const event: DesktopEvent = {
 					kind: "event",
@@ -716,7 +738,7 @@ export class SessionsService {
 					generation: session.generation,
 					sequence,
 					name: "frame",
-					data: capValue(sanitizeFrame(frame), MAX_EVENT_BYTES),
+					data: sanitizeFrame(frame),
 				};
 				const next = applyEvent(session.state, event);
 				session.state = { ...next, sequence };
@@ -738,7 +760,7 @@ export class SessionsService {
 
 	async snapshot(workspaceId: string, sessionId: string): Promise<SessionSnapshot> {
 		const session = this.requireSession(workspaceId, sessionId);
-		return compactSnapshot({ state: session.state, sessionPath: session.sessionPath });
+		return { state: session.state, sessionPath: session.sessionPath };
 	}
 
 	async close(workspaceId: string, sessionId: string): Promise<{ closed: true }> {
@@ -824,7 +846,7 @@ export class SessionsService {
 		if (type === "get_available_models") return { models: projectModels(value) };
 		if (type === "set_model") return projectModel(value);
 		const sanitized = sanitizeRpcResult(value);
-		return capValue(sanitized, MAX_EVENT_BYTES);
+		return HISTORY_RPC_COMMANDS[type] === true ? sanitized : capValue(sanitized, MAX_EVENT_BYTES);
 	}
 
 	private async dispatchRpc(session: HostSession, command: RpcCommand): Promise<unknown> {
@@ -1137,8 +1159,9 @@ export class SessionsService {
 				input.subagentId,
 				input.fromByte ?? 0,
 			);
-			const messages = capValue(transcript.messages, MAX_EVENT_BYTES);
-			return { ...transcript, messages: Array.isArray(messages) ? messages : [messages] };
+			// Transcript de subagente também é replay: não passa pelo teto
+			// destrutivo. O wire fragmenta a resposta se ela for grande.
+			return transcript;
 		} catch (error) {
 			throw asSessionError(error);
 		}
@@ -1225,6 +1248,7 @@ export class SessionsService {
 		data: unknown,
 	): SessionViewState {
 		const sequence = state.sequence + 1;
+		const sanitized = sanitizeRpcResult(data);
 		const event: DesktopEvent = {
 			kind: "event",
 			workspaceId: session.workspaceId,
@@ -1232,7 +1256,7 @@ export class SessionsService {
 			generation: session.generation,
 			sequence,
 			name,
-			data: capValue(sanitizeRpcResult(data), MAX_EVENT_BYTES),
+			data: HISTORY_EVENTS[name] === true ? sanitized : capValue(sanitized, MAX_EVENT_BYTES),
 		};
 		const next = applyEvent(state, event);
 		return { ...next, sequence };
@@ -1269,31 +1293,17 @@ export class SessionsService {
 		}).catch(() => undefined);
 		if (isRecord(levels)) state = this.applyLocal(session, state, "desktop_thinking_levels", levels);
 
-		const history = await this.readHistory(session).catch((error: unknown) => {
-			this.options.log.warn("sessao.historico_inicial_falhou", {
-				message: (error as Error).message,
-			});
-			return undefined;
+		// Qualquer falha de histórico sobe: este snapshot substituirá o
+		// histórico anterior, então abrir com transcript vazio esconderia uma
+		// perda material. A UI recebe o erro da operação.
+		const history = await this.readHistory(session);
+		session.pagedHistory = history.paged;
+		state = this.applyLocal(session, state, "desktop_history", {
+			messages: history.messages,
+			tools: history.tools,
 		});
-		if (history) {
-			session.pagedHistory = history.paged;
-			const compacted = compactHistory(history.messages, history.tools);
-			state = this.applyLocal(session, state, "desktop_history", {
-				messages: compacted.messages,
-				tools: compacted.tools,
-			});
-			if (compacted.dropped > 0 || compacted.truncated) {
-				state = this.applyLocal(session, state, "desktop_notice", {
-					level: "warning",
-					text:
-						compacted.dropped > 0
-							? `O histórico é muito grande: ${compacted.dropped} mensagens antigas não couberam na janela de exibição e permanecem salvas no OMP.`
-							: "Parte do histórico muito grande foi resumida na exibição; o conteúdo completo continua salvo no OMP.",
-				});
-			}
-			const finalized = finalizedAgentsFromMessages(history.rawMessages);
-			session.finalizedAgents = mergeAgentRows(finalized, [], session.finalizedAgents);
-		}
+		const finalized = finalizedAgentsFromMessages(history.rawMessages);
+		session.finalizedAgents = mergeAgentRows(finalized, [], session.finalizedAgents);
 		const stats = await this.requestData(session, { type: "get_session_stats" }).catch(() => undefined);
 		if (isRecord(stats)) state = this.applyLocal(session, state, "desktop_stats", stats);
 		const subagents = await this.requestData(session, { type: "get_subagents" }).catch(() => undefined);
@@ -1312,7 +1322,7 @@ export class SessionsService {
 
 		session.state = state;
 		if (options.drainBuffer) this.drainBuffer(session, false);
-		return compactSnapshot({ state: session.state, sessionPath: session.sessionPath });
+		return { state: session.state, sessionPath: session.sessionPath };
 	}
 
 	private async readHistory(
@@ -1324,6 +1334,9 @@ export class SessionsService {
 		paged: boolean;
 	}> {
 		try {
+			// `get_entries` é a fonte canônica do branch completo (inclui
+			// mensagens anteriores a compactações e entryIds duráveis). A
+			// resposta não passa por capValue: o wire fragmenta a linha física.
 			const entries = await this.requestData(session, { type: "get_entries" });
 			if (isRecord(entries) && Array.isArray(entries.entries)) {
 				const branch = branchMessages(entries.entries, entries.leafId);
@@ -1335,6 +1348,17 @@ export class SessionsService {
 				};
 			}
 		} catch (error) {
+			// `get_messages_page` pagina o contexto VIVO do agente; depois de uma
+			// compactação ele não contém as mensagens antigas. Cair nele quando
+			// `get_entries` estoura o limite de 64 MiB fingiria um histórico
+			// completo. O erro material sobe para a UI. HOST_EXITED também sobe:
+			// o transporte morreu e a paginação não tem como funcionar.
+			if (
+				error instanceof SessionError &&
+				(error.code === "FRAME_TOO_LARGE" || error.code === "HOST_EXITED")
+			) {
+				throw error;
+			}
 			this.options.log.warn("sessao.entries_indisponivel", { message: (error as Error).message });
 		}
 		const paged = await this.readHistoryPages(session);
@@ -1346,9 +1370,13 @@ export class SessionsService {
 		tools: Record<string, ToolExecution>;
 		rawMessages: unknown[];
 	}> {
+		// Sem teto arbitrário de páginas: a completude é validada pelo total
+		// anunciado e o progresso pelo cursor. Qualquer inconsistência falha
+		// explicitamente em vez de devolver um histórico com lacunas.
 		const rawMessages: unknown[] = [];
+		const seenCursors = new Set<string>();
 		let cursor: string | undefined;
-		let attempt = 0;
+		let totalMessages: number | undefined;
 		for (;;) {
 			const response = await this.transportRequest(session, {
 				type: "get_messages_page",
@@ -1356,15 +1384,37 @@ export class SessionsService {
 				limit: 256,
 			});
 			const data = response.data;
-			if (!isRecord(data) || !Array.isArray(data.messages)) break;
-			rawMessages.push(...data.messages);
-			cursor = typeof data.nextCursor === "string" ? data.nextCursor : undefined;
-			if (!cursor) break;
-			attempt += 1;
-			if (attempt > 200) {
-				this.options.log.warn("sessao.historico_longo", { sessionId: session.sessionId, pages: attempt });
-				break;
+			if (!isRecord(data) || !Array.isArray(data.messages)) {
+				throw new SessionError("INTERNAL", "O OMP devolveu uma página de histórico inválida.");
 			}
+			const pageTotal = data.totalMessages;
+			if (typeof pageTotal !== "number" || !Number.isSafeInteger(pageTotal) || pageTotal < 0) {
+				throw new SessionError("INTERNAL", "A paginação do histórico não informou o total de mensagens.");
+			}
+			if (totalMessages === undefined) totalMessages = pageTotal;
+			else if (totalMessages !== pageTotal) {
+				throw new SessionError("INTERNAL", "O histórico mudou durante a paginação; recarregue a sessão.");
+			}
+			rawMessages.push(...data.messages);
+			if (rawMessages.length > pageTotal) {
+				throw new SessionError("INTERNAL", "O OMP devolveu mais mensagens do que o total anunciado.");
+			}
+			const rawCursor = data.nextCursor;
+			if (rawCursor === undefined) break;
+			if (typeof rawCursor !== "string" || rawCursor.length === 0) {
+				throw new SessionError("INTERNAL", "O OMP devolveu um cursor de histórico inválido.");
+			}
+			if (data.messages.length === 0) {
+				throw new SessionError("INTERNAL", "A paginação do histórico não avançou.");
+			}
+			if (rawCursor === cursor || seenCursors.has(rawCursor)) {
+				throw new SessionError("INTERNAL", "A paginação do histórico repetiu um cursor.");
+			}
+			seenCursors.add(rawCursor);
+			cursor = rawCursor;
+		}
+		if (totalMessages === undefined || rawMessages.length !== totalMessages) {
+			throw new SessionError("INTERNAL", "A paginação do histórico terminou incompleta.");
 		}
 		const messages = rawMessages.map((raw, index) =>
 			chatMessageFromRaw(raw, {
@@ -1443,21 +1493,22 @@ export class SessionsService {
 					session.pagedHistory = history.paged;
 					const finalized = finalizedAgentsFromMessages(history.rawMessages);
 					session.finalizedAgents = mergeAgentRows(finalized, [], session.finalizedAgents);
-					const compacted = compactHistory(history.messages, history.tools);
 					this.emitEvent(session, "desktop_history", {
-						messages: compacted.messages,
-						tools: compacted.tools,
+						messages: history.messages,
+						tools: history.tools,
 					});
-					if (compacted.dropped > 0) {
-						this.emitEvent(session, "desktop_notice", {
-							level: "warning",
-							text: `O histórico é muito grande: ${compacted.dropped} mensagens antigas não couberam na janela de exibição e permanecem salvas no OMP.`,
-						});
-					}
 				} catch (error) {
 					session.historyDirty = true;
 					this.options.log.warn("sessao.historico_sync_falhou", {
 						message: (error as Error).message,
+					});
+					// O histórico anterior é preservado, mas a falha é material:
+					// o usuário precisa saber que a conversa pode estar desatualizada.
+					this.emitEvent(session, "desktop_notice", {
+						level: "error",
+						text: `Não foi possível atualizar o histórico completo desta sessão: ${
+							(error as Error).message
+						} O histórico anterior foi preservado.`,
 					});
 				}
 			}

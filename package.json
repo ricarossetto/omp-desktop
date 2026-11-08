@@ -1,19 +1,22 @@
 {
 	"name": "omp-desktop",
 	"private": true,
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"type": "module",
-	"description": "OMP Desktop: aplicativo Windows para o mecanismo OMP",
+	"description": "OMP Desktop: aplicativo desktop para o mecanismo OMP (Windows e Linux x86_64)",
+	"desktopName": "omp-desktop.desktop",
 	"main": "out/main/index.js",
 	"scripts": {
 		"dev": "bun scripts/build-host.ts && electron-vite dev",
 		"build:host": "bun scripts/build-host.ts",
 		"build": "bun scripts/build-host.ts && electron-vite build",
+		"build:icons": "bun scripts/build-icon.ts .",
 		"start": "electron .",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test tests/unit",
 		"test:acceptance": "bun run build && playwright test",
 		"dist:win": "bun run build && bun scripts/dist-win.ts",
+		"dist:linux": "bun run build && bun scripts/dist-linux.ts",
 		"smoke:installed": "bun scripts/smoke-installed.ts"
 	},
 	"dependencies": {
@@ -41,6 +44,7 @@
 		"react-dom": "19.3.1",
 		"react-markdown": "10.1.0",
 		"remark-gfm": "4.0.1",
+		"sharp": "0.35.5",
 		"typescript": "7.0.2",
 		"vite": "8.3.6"
 	},

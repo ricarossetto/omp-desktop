@@ -618,47 +618,239 @@ describe("SessionsService", () => {
 		expect((await recordLines(record)).filter((line) => line.type === "prompt")).toHaveLength(0);
 	});
 
-	test("histórico inicial gigante é truncado com marca e cabe no evento", async () => {
-		const huge = "y".repeat(2 * 1024 * 1024);
+	test("histórico >8 MiB atravessa o snapshot com conteúdo, ordem e detalhes profundos intactos", async () => {
+		// Unicode + emoji: ~9 MiB em UTF-8 numa única mensagem de ferramenta.
+		const huge = "á🚀".repeat(1_500_000);
+		expect(Buffer.byteLength(huge, "utf8")).toBeGreaterThan(MAX_EVENT_BYTES);
+		let details: Record<string, unknown> = { fim: "valor-profundo" };
+		for (let level = 0; level < 20; level++) details = { nivel: level, filho: details };
 		const entries = {
-			leafId: "e2",
+			leafId: "e4",
 			entries: [
 				{
 					type: "message",
 					id: "e1",
 					parentId: null,
-					message: {
-						role: "assistant",
-						content: [{ type: "toolCall", id: "t1", name: "read", arguments: { path: "a" } }],
-						timestamp: 1,
-					},
+					message: { role: "user", content: "INÍCIO-HISTÓRICO", timestamp: 1 },
 				},
 				{
 					type: "message",
 					id: "e2",
 					parentId: "e1",
 					message: {
+						role: "assistant",
+						content: [{ type: "toolCall", id: "t1", name: "read", arguments: { path: "a" } }],
+						timestamp: 2,
+					},
+				},
+				{
+					type: "message",
+					id: "e3",
+					parentId: "e2",
+					message: {
 						role: "toolResult",
 						toolCallId: "t1",
 						toolName: "read",
 						content: [{ type: "text", text: huge }],
+						details,
 						isError: false,
-						timestamp: 2,
+						timestamp: 3,
 					},
+				},
+				{
+					type: "message",
+					id: "e4",
+					parentId: "e3",
+					message: { role: "user", content: "FIM-HISTÓRICO", timestamp: 4 },
 				},
 			],
 		};
 		const harness = await createHarness({ scenario: "basic", entries });
 		const snapshot = await harness.sessions.create(harness.workspaceId);
-		expect(jsonBytes(snapshot)).toBeLessThanOrEqual(MAX_EVENT_BYTES);
-		const toolMessage = snapshot.state.messages.find((message) => message.role === "toolResult");
-		const block = toolMessage?.content[0];
-		expect(block?.type).toBe("text");
-		if (block?.type === "text") {
-			expect(block.text).toContain("conteúdo omitido por tamanho");
-			expect(block.text.length).toBeLessThan(huge.length);
-		}
-		expect(snapshot.state.tools.t1?.resultTruncated).toBe(true);
+
+		expect(jsonBytes(snapshot)).toBeGreaterThan(MAX_EVENT_BYTES);
+		expect(snapshot.state.messages.map((message) => message.key)).toEqual([
+			"entry:e1",
+			"entry:e2",
+			"entry:e3",
+			"entry:e4",
+		]);
+		const first = snapshot.state.messages[0].content[0];
+		expect(first).toEqual({ type: "text", text: "INÍCIO-HISTÓRICO" });
+		const last = snapshot.state.messages[3].content[0];
+		expect(last).toEqual({ type: "text", text: "FIM-HISTÓRICO" });
+		const toolMessage = snapshot.state.messages[2];
+		expect(toolMessage.content[0]).toEqual({ type: "text", text: huge });
+		expect(snapshot.state.tools.t1?.resultText).toBe(huge);
+		expect(snapshot.state.tools.t1?.resultTruncated).toBeUndefined();
+		expect(snapshot.state.tools.t1?.details).toEqual(details);
+
+		// `snapshot()` é outro caminho que antes aplicava compactSnapshot.
+		const reloaded = await harness.sessions.snapshot(harness.workspaceId, snapshot.state.sessionId);
+		expect(reloaded.state.messages.map((message) => message.key)).toEqual([
+			"entry:e1",
+			"entry:e2",
+			"entry:e3",
+			"entry:e4",
+		]);
+		expect(reloaded.state.messages[2].content[0]).toEqual({ type: "text", text: huge });
+		expect(reloaded.state.tools.t1?.details).toEqual(details);
+		expect(jsonBytes(reloaded)).toBeGreaterThan(MAX_EVENT_BYTES);
+	});
+
+	test("get_entries acima do limite não cai em get_messages_page", async () => {
+		const harness = await createHarness({ scenario: "basic" });
+		const calls: string[] = [];
+		const transport = {
+			request: async (command: { type: string }) => {
+				calls.push(command.type);
+				if (command.type === "get_entries") {
+					return {
+						id: "r",
+						type: "response",
+						command: "get_entries",
+						success: false,
+						error: "RPC response exceeded the transport limit",
+					};
+				}
+				return {
+					id: "r",
+					type: "response",
+					command: "get_messages_page",
+					success: true,
+					data: { messages: [], totalMessages: 0 },
+				};
+			},
+		};
+		const service = harness.sessions as unknown as {
+			readHistory(session: unknown): Promise<unknown>;
+		};
+		await expect(service.readHistory({ generation: 1, transport })).rejects.toThrow("grande demais");
+		expect(calls).toEqual(["get_entries"]);
+	});
+
+	test("paginação do histórico não para em 200 páginas e preserva ordem/chaves", async () => {
+		const harness = await createHarness({ scenario: "basic" });
+		const total = 201;
+		let index = 0;
+		const transport = {
+			request: async () => {
+				const current = index++;
+				return {
+					id: `r${current}`,
+					type: "response",
+					command: "get_messages_page",
+					success: true,
+					data: {
+						messages: [{ role: "user", content: `msg-${current}`, timestamp: current }],
+						totalMessages: total,
+						...(current < total - 1 ? { nextCursor: `cursor-${current + 1}` } : {}),
+					},
+				};
+			},
+		};
+		const service = harness.sessions as unknown as {
+			readHistoryPages(session: unknown): Promise<{
+				messages: Array<{ key: string; content: Array<{ type: string; text?: string }> }>;
+			}>;
+		};
+		const result = await service.readHistoryPages({ generation: 7, transport });
+		expect(result.messages).toHaveLength(total);
+		expect(result.messages[0].key).toBe("hist:7:0");
+		expect(result.messages.at(-1)?.key).toBe(`hist:7:${total - 1}`);
+		expect(result.messages[0].content[0]).toEqual({ type: "text", text: "msg-0" });
+		expect(result.messages.at(-1)?.content[0]).toEqual({ type: "text", text: `msg-${total - 1}` });
+	});
+
+	test("paginação do histórico falha explicitamente em cursor repetido", async () => {
+		const harness = await createHarness({ scenario: "basic" });
+		const transport = {
+			request: async () => ({
+				id: "r",
+				type: "response",
+				command: "get_messages_page",
+				success: true,
+				data: {
+					messages: [{ role: "user", content: "msg", timestamp: 1 }],
+					totalMessages: 2,
+					nextCursor: "cursor-repetido",
+				},
+			}),
+		};
+		const service = harness.sessions as unknown as {
+			readHistoryPages(session: unknown): Promise<unknown>;
+		};
+		await expect(service.readHistoryPages({ generation: 1, transport })).rejects.toThrow("repetiu um cursor");
+	});
+
+	test("paginação do histórico falha explicitamente quando termina incompleta", async () => {
+		const harness = await createHarness({ scenario: "basic" });
+		const transport = {
+			request: async () => ({
+				id: "r",
+				type: "response",
+				command: "get_messages_page",
+				success: true,
+				data: {
+					messages: [{ role: "user", content: "msg", timestamp: 1 }],
+					totalMessages: 2,
+				},
+			}),
+		};
+		const service = harness.sessions as unknown as {
+			readHistoryPages(session: unknown): Promise<unknown>;
+		};
+		await expect(service.readHistoryPages({ generation: 1, transport })).rejects.toThrow("terminou incompleta");
+	});
+
+	test("paginação do histórico falha quando o total muda entre páginas", async () => {
+		const harness = await createHarness({ scenario: "basic" });
+		let call = 0;
+		const transport = {
+			request: async () => {
+				call += 1;
+				return {
+					id: "r",
+					type: "response",
+					command: "get_messages_page",
+					success: true,
+					data: {
+						messages: [{ role: "user", content: `msg-${call}`, timestamp: call }],
+						totalMessages: call === 1 ? 2 : 3,
+						nextCursor: `cursor-${call}`,
+					},
+				};
+			},
+		};
+		const service = harness.sessions as unknown as {
+			readHistoryPages(session: unknown): Promise<unknown>;
+		};
+		await expect(service.readHistoryPages({ generation: 1, transport })).rejects.toThrow("histórico mudou");
+	});
+
+	test("paginação do histórico falha em página vazia com cursor", async () => {
+		const harness = await createHarness({ scenario: "basic" });
+		let call = 0;
+		const transport = {
+			request: async () => {
+				call += 1;
+				return {
+					id: "r",
+					type: "response",
+					command: "get_messages_page",
+					success: true,
+					data: {
+						messages: call === 1 ? [{ role: "user", content: "msg", timestamp: 1 }] : [],
+						totalMessages: 2,
+						nextCursor: `cursor-${call}`,
+					},
+				};
+			},
+		};
+		const service = harness.sessions as unknown as {
+			readHistoryPages(session: unknown): Promise<unknown>;
+		};
+		await expect(service.readHistoryPages({ generation: 1, transport })).rejects.toThrow("não avançou");
 	});
 
 	test("fechar sessão com diálogo pendente emite desktop_dialog_closed e limpa o estado", async () => {

@@ -30,15 +30,18 @@ function run(file: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ co
 }
 
 const keep = process.argv.includes("--keep");
+const platform = process.platform;
 const root = await mkdtemp(path.join(tmpdir(), "omp-install-smoke-"));
 const home = path.join(root, "home");
-const installDir = path.join(root, "omp");
+const installDir = path.join(root, "bin");
 const env: NodeJS.ProcessEnv = {
 	...process.env,
 	USERPROFILE: home,
 	HOME: home,
 	APPDATA: path.join(home, "AppData", "Roaming"),
 	LOCALAPPDATA: path.join(home, "AppData", "Local"),
+	XDG_CONFIG_HOME: path.join(home, ".config"),
+	XDG_DATA_HOME: path.join(home, ".local", "share"),
 	PI_INSTALL_DIR: installDir,
 };
 
@@ -55,7 +58,7 @@ try {
 	const installer = new OmpInstaller({
 		installDir,
 		version: OMP_INSTALL_VERSION,
-		target: ompInstallTarget(),
+		target: ompInstallTarget(process.arch, platform),
 		probe: (ompPath, options) => resolver.probeOmpPath(ompPath, options),
 		onProgress: (progress) => {
 			if (progress.phase !== lastPhase) {
@@ -69,8 +72,12 @@ try {
 	const verified = await run(result.ompPath, ["--version"], env);
 	// PATH sem o diretório do Bun: o binário standalone precisa funcionar
 	// sozinho numa máquina limpa (o app já usa o Bun empacotado para o host).
-	const standaloneEnv = { ...env, PATH: "C:\\Windows\\System32;C:\\Windows" };
+	const standaloneEnv = {
+		...env,
+		PATH: platform === "win32" ? "C:\\Windows\\System32;C:\\Windows" : "/usr/bin:/bin",
+	};
 	const standalone = await run(result.ompPath, ["--version"], standaloneEnv);
+	const executable = platform === "win32" || (info.mode & 0o111) !== 0;
 	console.log(
 		JSON.stringify(
 			{
@@ -78,12 +85,15 @@ try {
 					verified.code === 0 &&
 					verified.stdout.includes(result.ompVersion) &&
 					standalone.code === 0 &&
-					standalone.stdout.includes(result.ompVersion),
+					standalone.stdout.includes(result.ompVersion) &&
+					executable,
+				platform,
 				installDir: result.installDir,
 				ompPath: result.ompPath,
 				ompVersion: result.ompVersion,
 				downloaded: result.downloaded,
 				bytes: info.size,
+				mode: `0o${(info.mode & 0o777).toString(8)}`,
 				versionOutput: verified.stdout.trim(),
 				versionStderr: verified.stderr.trim(),
 				standaloneWithoutBun: standalone.stdout.trim(),
@@ -93,7 +103,7 @@ try {
 			2,
 		),
 	);
-	if (verified.code !== 0 || standalone.code !== 0) process.exitCode = 1;
+	if (verified.code !== 0 || standalone.code !== 0 || !executable) process.exitCode = 1;
 	if (keep) {
 		console.log(`[keep] ${root}`);
 	} else {

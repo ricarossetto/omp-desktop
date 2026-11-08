@@ -1,17 +1,21 @@
 /**
  * Smoke do aplicativo INSTALADO (fora do checkout).
  *
- * Uso:
+ * Uso (Windows):
  *   bun scripts/smoke-installed.ts --exe "C:\\...\\OMP Desktop.exe" --cwd "C:\\fixture"
+ * Uso (Linux, com GUI em Xvfb/Wayland):
+ *   xvfb-run -a bun scripts/smoke-installed.ts --exe /usr/bin/omp-desktop --cwd /tmp/fixture
  *
  * - Usa userData temporário (--user-data-dir).
  * - Remove o Bun global do PATH para provar que o Bun empacotado inicia o host.
  * - Aponta OMP_DESKTOP_OMP_PATH para o OMP real e espera o relatório
  *   `--smoke-report` gravado pelo main quando janela + host estão prontos.
- * - Fecha o aplicativo e confirma que nenhum PID iniciado por ele continua vivo.
+ * - Fecha o aplicativo (WM_CLOSE no Windows, SIGTERM no Linux) e confirma que
+ *   nenhum PID iniciado por ele continua vivo. No Linux o smoke não mata PIDs
+ *   arbitrários do relatório: um PID reutilizado não deve derrubar o runner.
  */
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import * as path from "node:path";
 
 interface SmokeReport {
@@ -59,7 +63,9 @@ if (!exe || !cwd) {
 	process.exit(2);
 }
 
-const exePath = path.resolve(exe);
+// Resolve o symlink /usr/bin/omp-desktop antes de derivar resources/; sem isso
+// o smoke compararia o Bun empacotado com /usr/bin e falharia por engano.
+const exePath = await realpath(path.resolve(exe)).catch(() => path.resolve(exe));
 await stat(exePath).catch(() => {
 	console.error(`Executável não encontrado: ${exePath}`);
 	process.exit(2);
@@ -74,18 +80,30 @@ if (!workspaceInfo?.isDirectory()) {
 const userDataDir = await mkdtemp(path.join(tmpdir(), "omp-desktop-smoke-"));
 const reportPath = path.join(userDataDir, "smoke-report.json");
 
+function normalizeForCompare(value: string): string {
+	const resolved = path.resolve(value);
+	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isWithin(parent: string, child: string): boolean {
+	const relative = path.relative(normalizeForCompare(parent), normalizeForCompare(child));
+	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function pathWithoutBun(): string {
-	const bunDir = path.dirname(process.execPath).toLowerCase();
+	const bunDir = normalizeForCompare(path.dirname(process.execPath));
+	const bunHome = normalizeForCompare(path.join(homedir(), ".bun", "bin"));
 	const entries = (process.env.PATH ?? "").split(path.delimiter);
 	const filtered = entries.filter((entry) => {
 		if (!entry) return false;
-		const normalized = path.resolve(entry).toLowerCase();
-		return normalized !== bunDir && !normalized.endsWith(`${path.sep}.bun${path.sep}bin`);
+		const normalized = normalizeForCompare(entry);
+		if (normalized === bunDir || normalized === bunHome) return false;
+		return process.platform !== "win32" || !normalized.endsWith(`${path.sep}.bun${path.sep}bin`);
 	});
 	return filtered.join(path.delimiter);
 }
 
-const ompOnPath = Bun.which("omp") ?? Bun.which("omp.exe");
+const ompOnPath = Bun.which("omp") ?? (process.platform === "win32" ? Bun.which("omp.exe") : undefined);
 const env: Record<string, string | undefined> = {
 	...process.env,
 	// --com-bun-global mantém o Bun no PATH (necessário ao shim do OMP); o padrão prova o Bun empacotado.
@@ -107,11 +125,20 @@ async function processRunning(pid: number | null | undefined): Promise<boolean> 
 	}
 }
 
-async function taskkill(pid: number, force: boolean): Promise<void> {
-	const task = Bun.spawn(["taskkill", "/PID", String(pid), ...(force ? ["/T", "/F"] : [])], {
-		stdio: ["ignore", "ignore", "ignore"],
-	});
-	await task.exited.catch(() => undefined);
+async function terminate(pid: number, force: boolean): Promise<void> {
+	if (!pid || !Number.isInteger(pid)) return;
+	if (process.platform === "win32") {
+		const task = Bun.spawn(["taskkill", "/PID", String(pid), ...(force ? ["/T", "/F"] : [])], {
+			stdio: ["ignore", "ignore", "ignore"],
+		});
+		await task.exited.catch(() => undefined);
+		return;
+	}
+	try {
+		process.kill(pid, force ? "SIGKILL" : "SIGTERM");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+	}
 }
 
 console.log(`Smoke instalado: ${exePath}`);
@@ -166,13 +193,13 @@ if (!report) {
 	console.error(`O aplicativo não gravou o relatório de smoke em ${timeoutMs} ms.`);
 	const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
 	if (stderr) console.error(`stderr do aplicativo:\n${stderr.slice(-3000)}`);
-	await taskkill(appProcess.pid, true);
+	await terminate(appProcess.pid, true);
 	process.exit(1);
 }
 
 console.log("Relatório:", JSON.stringify(report, null, 2));
-const bundledBunRoot = path.dirname(exePath).toLowerCase();
-const usesBundledBun = (report.bunPath ?? "").toLowerCase().startsWith(bundledBunRoot);
+const bundledBunRoot = path.dirname(exePath);
+const usesBundledBun = report.bunPath ? isWithin(bundledBunRoot, report.bunPath) : false;
 // Sem Bun global no PATH o shim do OMP não roda; nesse modo basta o host subir com o Bun empacotado.
 const stripMode = args["com-bun-global"] !== "true";
 const ok = stripMode
@@ -181,12 +208,16 @@ const ok = stripMode
 if (!ok) {
 	console.error("O aplicativo não chegou ao estado pronto.");
 	if (report.message) console.error(`Mensagem: ${report.message}`);
-	await taskkill(appProcess.pid, true);
+	await terminate(appProcess.pid, true);
 	process.exit(1);
 }
 
-console.log("Encerrando o aplicativo (WM_CLOSE)...");
-await taskkill(appProcess.pid, false);
+console.log(
+	process.platform === "win32"
+		? "Encerrando o aplicativo (WM_CLOSE)..."
+		: "Encerrando o aplicativo (SIGTERM)...",
+);
+await terminate(appProcess.pid, false);
 const exitDeadline = Date.now() + 12_000;
 let exited = false;
 while (Date.now() < exitDeadline) {
@@ -202,8 +233,12 @@ while (Date.now() < exitDeadline) {
 }
 let graceful = exited;
 if (!exited) {
-	console.log("O aplicativo não encerrou sozinho; encerrando a árvore do PID iniciado pelo smoke.");
-	await taskkill(appProcess.pid, true);
+	console.log(
+		process.platform === "win32"
+			? "O aplicativo não encerrou sozinho; encerrando a árvore do PID iniciado pelo smoke."
+			: "O aplicativo não encerrou sozinho; encerrando o PID iniciado pelo smoke.",
+	);
+	await terminate(appProcess.pid, true);
 }
 await Promise.race([appProcess.exited.catch(() => undefined), sleep(5000)]);
 
@@ -222,7 +257,11 @@ do {
 } while (Date.now() < cleanupDeadline);
 if (lingering.length > 0) {
 	console.error(`Processos do aplicativo continuam ativos após o fechamento: ${lingering.join(", ")}`);
-	for (const pid of lingering) await taskkill(pid, true);
+	// No POSIX o PID pode ter sido reutilizado; matar um PID do relatório poderia
+	// derrubar o runner. O smoke apenas falha e deixa o runtime encerrar a árvore.
+	if (process.platform === "win32") {
+		for (const pid of lingering) await terminate(pid, true);
+	}
 	graceful = false;
 }
 if (!graceful) {

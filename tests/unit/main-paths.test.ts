@@ -20,7 +20,7 @@ await writeFile(path.join(root, "raiz.txt"), "raiz");
 
 let symlinkAvailable = true;
 try {
-	await symlink(outside, path.join(root, "link-externo"), "junction");
+	await symlink(outside, path.join(root, "link-externo"), process.platform === "win32" ? "junction" : "dir");
 } catch {
 	symlinkAvailable = false;
 }
@@ -31,32 +31,61 @@ afterAll(async () => {
 });
 
 describe("validateRelativePath", () => {
-	test("rejeita traversal, absolutos, UNC, ADS e NUL", () => {
+	test("rejeita traversal, absolutos POSIX, UNC e NUL em qualquer plataforma", () => {
 		const invalid = [
 			"",
 			"..",
 			"../segredo.txt",
-			"..\\segredo.txt",
 			"sub/../../segredo.txt",
-			"C:\\Windows\\System32",
-			"C:Windows",
-			"c:/Windows",
 			"/etc/passwd",
-			"\\Windows",
-			"\\\\servidor\\share\\arquivo.txt",
 			"//servidor/share/arquivo.txt",
-			"arquivo.txt:stream",
-			"pasta/arquivo.txt:stream",
 			"arquivo\u0000.txt",
-			'a<b>.txt',
+			"linha\nquebrada.txt",
 		];
 		for (const value of invalid) {
 			expect(() => validateRelativePath(value)).toThrow(PathValidationError);
 		}
 	});
 
+	if (process.platform === "win32") {
+		test("rejeita regras exclusivas do Windows", () => {
+			const invalid = [
+				"..\\segredo.txt",
+				"\\Windows",
+				"\\\\servidor\\share\\arquivo.txt",
+				"C:\\Windows\\System32",
+				"C:Windows",
+				"c:/Windows",
+				"arquivo.txt:stream",
+				"pasta/arquivo.txt:stream",
+				'a<b>.txt',
+			];
+			for (const value of invalid) {
+				expect(() => validateRelativePath(value)).toThrow(PathValidationError);
+			}
+		});
+	} else {
+		test("aceita nomes POSIX válidos que o Windows recusaria", () => {
+			expect(validateRelativePath("pasta:com:dois/arquivo.txt")).toBe("pasta:com:dois/arquivo.txt");
+			expect(validateRelativePath("a<b>.txt")).toBe("a<b>.txt");
+			expect(validateRelativePath("C:relativo.txt")).toBe("C:relativo.txt");
+			expect(validateRelativePath("C:\\Windows\\System32")).toBe("C:\\Windows\\System32");
+			expect(validateRelativePath("arquivo.txt:stream")).toBe("arquivo.txt:stream");
+			expect(validateRelativePath("..\\segredo.txt")).toBe("..\\segredo.txt");
+			expect(validateRelativePath("\\Windows")).toBe("\\Windows");
+			expect(validateRelativePath("\\\\servidor\\share\\arquivo.txt")).toBe(
+				"\\\\servidor\\share\\arquivo.txt",
+			);
+		});
+	}
+
 	test("normaliza separadores e aceita nomes com Unicode/espaços", () => {
-		expect(validateRelativePath("sub\\arquivo.txt")).toBe("sub/arquivo.txt");
+		if (process.platform === "win32") {
+			expect(validateRelativePath("sub\\arquivo.txt")).toBe("sub/arquivo.txt");
+		} else {
+			// No POSIX a barra invertida é um caractere válido do nome.
+			expect(validateRelativePath("sub\\arquivo.txt")).toBe("sub\\arquivo.txt");
+		}
 		expect(validateRelativePath("./sub//arquivo.txt")).toBe("sub/arquivo.txt");
 		expect(validateRelativePath("olá mundo/ção.txt")).toBe("olá mundo/ção.txt");
 	});
@@ -73,11 +102,23 @@ describe("isWithin", () => {
 
 describe("resolveWorkspacePath", () => {
 	test("resolve arquivo dentro do workspace", async () => {
-		const resolved = await resolveWorkspacePath(root, "sub\\arquivo.txt");
+		const relative = process.platform === "win32" ? "sub\\arquivo.txt" : "sub/arquivo.txt";
+		const resolved = await resolveWorkspacePath(root, relative);
 		expect(resolved.relativePath).toBe("sub/arquivo.txt");
 		expect(resolved.realPath.toLowerCase()).toContain("arquivo.txt");
 		expect(isWithin(resolved.rootRealPath, resolved.realPath)).toBe(true);
 	});
+
+	if (process.platform !== "win32") {
+		test("aceita nome POSIX com barra invertida literal", async () => {
+			const literal = "sub\\literal.txt";
+			await writeFile(path.join(root, literal), "ok");
+			const resolved = await resolveWorkspacePath(root, literal);
+			expect(resolved.relativePath).toBe(literal);
+			expect(resolved.realPath).toContain(literal);
+			expect(isWithin(resolved.rootRealPath, resolved.realPath)).toBe(true);
+		});
+	}
 
 	test("recusa traversal e UNC mesmo antes de tocar no disco", async () => {
 		await expect(resolveWorkspacePath(root, "../segredo.txt")).rejects.toThrow(PathValidationError);

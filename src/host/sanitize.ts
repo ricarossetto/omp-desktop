@@ -5,8 +5,9 @@
  * - Campos de TRANSPORTE (providerPayload, headers, apiKey, tokens, baseUrl com
  *   credenciais) são removidos/redigidos.
  * - CONTEÚDO de conversa (texto, thinking, imagens, `arguments`/`content`/
- *   `details` de ferramentas) é preservado literalmente: uma ferramenta pode
- *   ler um arquivo com chaves `headers`/`secret` e isso é dado, não segredo.
+ *   `details` de ferramentas) é preservado literalmente e por referência, sem
+ *   limite de profundidade: uma ferramenta pode ler um arquivo com chaves
+ *   `headers`/`secret` e isso é dado, não segredo.
  *
  * Nenhuma redaction por prefixo (`sk-...`) é aplicada a texto: isso corromperia
  * mensagens do usuário. Segredos só em campos de transporte e nos logs.
@@ -86,22 +87,26 @@ function scrubbedBaseUrl(value: unknown): unknown {
 }
 
 function scrub(value: unknown, depth: number, topLevel: boolean, content: boolean): unknown {
+	// Subárvore de CONTEÚDO é dado de conversa, não transporte: a política de
+	// segredo não se aplica dentro dela e o valor atravessa por referência,
+	// sem limite de profundidade nem cópia destrutiva.
+	if (content) return value;
 	if (depth > MAX_DEPTH) return "[limite de profundidade]";
 	if (value === null || typeof value === "number" || typeof value === "boolean") return value;
 	if (typeof value === "string") return value;
 	if (Array.isArray(value)) {
-		return value.map((item) => scrub(item, depth + 1, false, content));
+		return value.map((item) => scrub(item, depth + 1, false, false));
 	}
 	if (isRecord(value)) {
 		const out: Record<string, unknown> = {};
 		for (const [key, item] of Object.entries(value)) {
-			if (!content && droppedTransportKey(key)) continue;
-			if (!content && topLevel && DROP_TOP_LEVEL[key] === true) continue;
-			if (!content && isBaseUrlKey(key)) {
+			if (droppedTransportKey(key)) continue;
+			if (topLevel && DROP_TOP_LEVEL[key] === true) continue;
+			if (isBaseUrlKey(key)) {
 				out[key] = scrubbedBaseUrl(item);
 				continue;
 			}
-			out[key] = scrub(item, depth + 1, false, content || CONTENT_KEYS[key] === true);
+			out[key] = scrub(item, depth + 1, false, CONTENT_KEYS[key] === true);
 		}
 		return out;
 	}

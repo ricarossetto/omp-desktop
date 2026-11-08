@@ -96,6 +96,9 @@ function scrub(
 	content: boolean,
 	seen: WeakSet<object>,
 ): unknown {
+	// Conteúdo já veio do JSON do OMP; não é configuração de transporte.
+	// Não percorre nem reduz argumentos/resultados de ferramentas profundas.
+	if (content) return value;
 	if (value === null || value === undefined) return value;
 	if (typeof value !== "object") return value;
 	if (value instanceof Date) return new Date(value.getTime());

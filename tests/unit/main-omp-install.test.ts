@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import {
@@ -9,6 +9,7 @@ import {
 	OmpInstallError,
 	OmpInstaller,
 	OmpInstallService,
+	ompBinaryName,
 	ompInstallTarget,
 	resolveOmpInstallDir,
 	type OmpFetch,
@@ -64,20 +65,36 @@ async function tempDir(): Promise<string> {
 const probeOk = async () => ({ compatible: true, ompVersion: VERSION });
 
 describe("caminho e alvo oficiais", () => {
-	test("respeita PI_INSTALL_DIR e cai para LOCALAPPDATA\\omp", () => {
-		expect(resolveOmpInstallDir({ PI_INSTALL_DIR: "C:\\tmp\\omp-install" })).toBe(
+	test("respeita PI_INSTALL_DIR e cai para LOCALAPPDATA\\omp no Windows", () => {
+		expect(resolveOmpInstallDir({ PI_INSTALL_DIR: "C:\\tmp\\omp-install" }, "win32")).toBe(
 			path.resolve("C:\\tmp\\omp-install"),
 		);
-		expect(resolveOmpInstallDir({ LOCALAPPDATA: "C:\\Users\\teste\\AppData\\Local" })).toBe(
-			path.join("C:\\Users\\teste\\AppData\\Local", "omp"),
-		);
-		expect(() => resolveOmpInstallDir({})).toThrow(OmpInstallError);
+		expect(
+			resolveOmpInstallDir({ LOCALAPPDATA: "C:\\Users\\teste\\AppData\\Local" }, "win32"),
+		).toBe(path.join("C:\\Users\\teste\\AppData\\Local", "omp"));
+		expect(() => resolveOmpInstallDir({}, "win32")).toThrow(OmpInstallError);
 	});
 
-	test("mapeia arquiteturas como o instalador oficial", () => {
-		expect(ompInstallTarget("x64")).toBe("windows-x86_64");
-		expect(ompInstallTarget("arm64")).toBe("windows-arm64");
-		expect(() => ompInstallTarget("ia32")).toThrow(OmpInstallError);
+	test("Linux usa PI_INSTALL_DIR ou $HOME/.local/bin, como o install.sh oficial", () => {
+		const home = path.join(tmpdir(), "omp-home");
+		expect(resolveOmpInstallDir({ HOME: home }, "linux")).toBe(
+			path.join(home, ".local", "bin"),
+		);
+		expect(
+			resolveOmpInstallDir({ HOME: home, PI_INSTALL_DIR: path.join(home, "custom") }, "linux"),
+		).toBe(path.resolve(path.join(home, "custom")));
+		expect(() => resolveOmpInstallDir({}, "linux")).toThrow(OmpInstallError);
+		expect(() => resolveOmpInstallDir({ HOME: home }, "darwin")).toThrow(OmpInstallError);
+	});
+
+	test("mapeia arquiteturas como os instaladores oficiais", () => {
+		expect(ompInstallTarget("x64", "win32")).toBe("windows-x86_64");
+		expect(ompInstallTarget("arm64", "win32")).toBe("windows-arm64");
+		expect(() => ompInstallTarget("ia32", "win32")).toThrow(OmpInstallError);
+		expect(ompInstallTarget("x64", "linux")).toBe("linux-x86_64");
+		expect(() => ompInstallTarget("arm64", "linux")).toThrow(OmpInstallError);
+		expect(ompBinaryName("win32")).toBe("omp.exe");
+		expect(ompBinaryName("linux")).toBe("omp");
 	});
 });
 
@@ -261,6 +278,123 @@ describe("instalação do binário", () => {
 			});
 			await expect(installer.install()).rejects.toMatchObject({ code: "NETWORK" });
 			expect(existsSync(path.join(dir, "omp.exe"))).toBe(false);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("instalação Linux x86_64", () => {
+	const LINUX_FILE = "omp-linux-x64";
+	const linuxAnswer = () => ({
+		build: { version: VERSION },
+		file: { name: LINUX_FILE, sha256: SHA, size: BINARY.byteLength },
+		download: `https://build.stencil.so/d/omp/${LINUX_FILE}`,
+	});
+
+	test("grava <dir>/omp sem .exe, aplica modo executável e limpa temporários", async () => {
+		const dir = await tempDir();
+		try {
+			const { fetchImpl, calls } = fakeFetch({ answer: linuxAnswer() });
+			const installer = new OmpInstaller({
+				installDir: dir,
+				version: VERSION,
+				target: "linux-x86_64",
+				fetchImpl,
+				probe: probeOk,
+			});
+			const result = await installer.install();
+			expect(result.downloaded).toBe(true);
+			expect(result.ompPath).toBe(path.join(dir, "omp"));
+			expect(result.installDir).toBe(dir);
+			expect(existsSync(path.join(dir, "omp.exe"))).toBe(false);
+			expect(await readFile(result.ompPath)).toEqual(Buffer.from(BINARY));
+			if (process.platform !== "win32") {
+				expect((await stat(result.ompPath)).mode & 0o111).not.toBe(0);
+			}
+			expect(calls[0]).toContain(`/api/products/omp/versions/${VERSION}/linux-x86_64`);
+			expect((await readdir(dir)).filter((name) => name.startsWith(".omp.download-"))).toHaveLength(0);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("não sobrescreve um omp Linux compatível já existente", async () => {
+		const dir = await tempDir();
+		try {
+			const finalPath = path.join(dir, "omp");
+			await writeFile(finalPath, "instalação anterior");
+			let fetched = 0;
+			const installer = new OmpInstaller({
+				installDir: dir,
+				version: VERSION,
+				target: "linux-x86_64",
+				fetchImpl: async () => {
+					fetched += 1;
+					throw new Error("não deveria baixar");
+				},
+				probe: probeOk,
+			});
+			const result = await installer.install();
+			expect(result.downloaded).toBe(false);
+			expect(result.ompPath).toBe(finalPath);
+			expect(fetched).toBe(0);
+			expect(await readFile(finalPath, "utf8")).toBe("instalação anterior");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("checksum divergente não cria omp e versão divergente remove o promovido", async () => {
+		const dir = await tempDir();
+		try {
+			const bad = new OmpInstaller({
+				installDir: dir,
+				version: VERSION,
+				target: "linux-x86_64",
+				fetchImpl: fakeFetch({
+					answer: {
+						...linuxAnswer(),
+						file: { name: LINUX_FILE, sha256: "0".repeat(64), size: BINARY.byteLength },
+					},
+				}).fetchImpl,
+				probe: probeOk,
+			});
+			await expect(bad.install()).rejects.toMatchObject({ code: "CHECKSUM" });
+			expect(existsSync(path.join(dir, "omp"))).toBe(false);
+
+			const mismatch = new OmpInstaller({
+				installDir: dir,
+				version: VERSION,
+				target: "linux-x86_64",
+				fetchImpl: fakeFetch({ answer: linuxAnswer() }).fetchImpl,
+				probe: async () => ({ compatible: true, ompVersion: "18.15.0" }),
+			});
+			await expect(mismatch.install()).rejects.toMatchObject({ code: "VERSION_MISMATCH" });
+			expect(existsSync(path.join(dir, "omp"))).toBe(false);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("recusa nome .exe para alvo Linux antes de gravar", async () => {
+		const dir = await tempDir();
+		try {
+			const installer = new OmpInstaller({
+				installDir: dir,
+				version: VERSION,
+				target: "linux-x86_64",
+				fetchImpl: fakeFetch({
+					answer: {
+						...linuxAnswer(),
+						file: { name: "omp-linux-x64.exe", sha256: SHA, size: BINARY.byteLength },
+						download: "https://build.stencil.so/d/omp/omp-linux-x64.exe",
+					},
+				}).fetchImpl,
+				probe: probeOk,
+			});
+			await expect(installer.install()).rejects.toMatchObject({ code: "NETWORK" });
+			expect(existsSync(path.join(dir, "omp"))).toBe(false);
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

@@ -13,6 +13,9 @@ export function effectiveOnboardingRuntime(
 	if (!override) return runtime;
 	return {
 		...override,
+		// A plataforma nunca vem do override: ela identifica o processo main e
+		// precisa continuar disponível para os textos/instruções nativas.
+		platform: runtime?.platform ?? override.platform,
 		// O campo legado acompanha o mesmo snapshot do store; sem isso o
 		// diagnóstico embutido poderia mostrar um Git antigo enquanto a seção
 		// de ferramentas já mostra o Git instalado.

@@ -38,7 +38,10 @@ function normalizeFileUrl(value: string): string | undefined {
 	try {
 		const url = new URL(value);
 		if (url.protocol !== "file:") return undefined;
-		return decodeURIComponent(url.pathname).replace(/\\/g, "/").toLowerCase();
+		const pathname = decodeURIComponent(url.pathname).replace(/\\/g, "/");
+		// No Windows o caminho é insensível a maiúsculas; no POSIX a comparação
+		// precisa ser exata para não autorizar outro arquivo.
+		return process.platform === "win32" ? pathname.toLowerCase() : pathname;
 	} catch {
 		return undefined;
 	}

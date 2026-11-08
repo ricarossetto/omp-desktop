@@ -2,12 +2,22 @@
  * Descoberta e execução do executável OMP e utilidades de processo.
  *
  * - `OMP_DESKTOP_OMP_PATH` tem precedência, depois `--omp-path` (argv do host) e PATH.
- * - Spawn sempre por argv; `.cmd`/`.bat` usam `cmd.exe /d /s /c` (exigido pelo
- *   Windows e por fixtures), `.js/.ts` usam o próprio Bun, `.exe` é direto.
- * - Nenhum processo é encerrado por nome: só a árvore do PID iniciado.
+ * - Spawn sempre por argv; no Windows `.cmd`/`.bat` usam `cmd.exe /d /s /c`
+ *   (exigido pelo Windows e por fixtures), `.js/.ts` usam o próprio Bun e
+ *   `.exe` é direto. No POSIX `.cmd/.bat` são recusados: o binário oficial é
+ *   um ELF sem extensão.
+ * - Nenhum processo é encerrado por nome: só a árvore do PID iniciado, com a
+ *   identidade capturada no spawn.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+	captureProcessIdentity,
+	killProcessTree,
+	type ProcessIdentity,
+} from "../main/process-tree";
+
+export { captureProcessIdentity, killProcessTree, type ProcessIdentity };
 
 export interface LaunchSpec {
 	command: string;
@@ -93,6 +103,11 @@ function resolveCmdShim(ompPath: string): ShimTarget | undefined {
 /** Monta o comando de lançamento para um executável/script OMP. */
 export function ompLaunchSpec(ompPath: string, args: readonly string[]): LaunchSpec {
 	if (CMD_RE.test(ompPath)) {
+		if (process.platform !== "win32") {
+			throw new Error(
+				`"${ompPath}" é um script .cmd/.bat do Windows e não executa no Linux. Selecione o binário omp.`,
+			);
+		}
 		const target = resolveCmdShim(ompPath);
 		if (target?.kind === "exe") return { command: target.path, args: [...args] };
 		if (target) return { command: process.execPath, args: [target.path, ...args] };
@@ -113,17 +128,50 @@ export function ompLaunchSpec(ompPath: string, args: readonly string[]): LaunchS
 	return { command: ompPath, args: [...args] };
 }
 
-export function resolveOmpPath(explicit?: string): string | undefined {
-	const configured = explicit ?? process.env.OMP_DESKTOP_OMP_PATH;
+/** Varredura POSIX do PATH sem depender de `which` e sem tocar no ambiente global. */
+function findOnPath(name: string, env: NodeJS.ProcessEnv): string | undefined {
+	const dirs = (env.PATH ?? "").split(path.delimiter).filter((dir) => dir.length > 0);
+	for (const dir of dirs) {
+		const candidate = path.resolve(dir, name);
+		try {
+			const info = fs.statSync(candidate);
+			if (!info.isFile()) continue;
+			fs.accessSync(candidate, fs.constants.X_OK);
+			return candidate;
+		} catch {
+			/* não existe ou não é executável */
+		}
+	}
+	return undefined;
+}
+
+export function resolveOmpPath(
+	explicit?: string,
+	env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+	const configured = explicit ?? env.OMP_DESKTOP_OMP_PATH;
 	if (configured && configured.trim().length > 0) {
 		const resolved = path.resolve(configured.trim());
 		try {
-			if (fs.statSync(resolved).isFile()) return resolved;
+			const info = fs.statSync(resolved);
+			if (info.isFile()) {
+				// Fixtures .js/.ts rodam via Bun e não precisam do bit de execução.
+				if (SCRIPT_RE.test(resolved)) return resolved;
+				fs.accessSync(resolved, fs.constants.X_OK);
+				return resolved;
+			}
 		} catch {
 			/* cai para o PATH */
 		}
 	}
-	return Bun.which("omp") ?? undefined;
+	const found = process.platform === "win32" ? Bun.which("omp") : findOnPath("omp", env);
+	if (!found) return undefined;
+	try {
+		fs.accessSync(found, fs.constants.X_OK);
+		return found;
+	} catch {
+		return undefined;
+	}
 }
 
 export interface OmpVersionInfo {
@@ -186,10 +234,31 @@ export async function runOmp(
 		windowsHide: true,
 		...(spec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
 	});
+	const identity = child.pid
+		? captureProcessIdentity(child.pid, spec.command)
+		: Promise.resolve<ProcessIdentity | undefined>(undefined);
 	let timedOut = false;
 	const timer = setTimeout(() => {
 		timedOut = true;
-		void killProcessTree(child.pid);
+		void identity.then((captured) => {
+			if (captured) {
+				void killProcessTree(captured).then((killed) => {
+					if (killed) return;
+					try {
+						child.kill();
+					} catch {
+						/* já saiu */
+					}
+				});
+				return;
+			}
+			// Sem identidade capturada, apenas o handle deste spawn é seguro.
+			try {
+				child.kill();
+			} catch {
+				/* já saiu */
+			}
+		});
 	}, timeoutMs);
 	try {
 		const [stdout, stderr, exitCode] = await Promise.all([
@@ -228,30 +297,6 @@ async function readCapped(stream: ReadableStream<Uint8Array>, limit: number): Pr
 		reader.releaseLock();
 	}
 	return text;
-}
-
-/** Encerra a árvore do PID iniciado pelo app; nunca busca processos por nome. */
-export async function killProcessTree(pid: number | undefined): Promise<void> {
-	if (!pid || pid <= 0) return;
-	if (process.platform === "win32") {
-		try {
-			const child = Bun.spawn(["taskkill", "/PID", String(pid), "/T", "/F"], {
-				stdin: "ignore",
-				stdout: "ignore",
-				stderr: "ignore",
-				windowsHide: true,
-			});
-			await child.exited;
-		} catch {
-			/* processo já saiu */
-		}
-		return;
-	}
-	try {
-		process.kill(pid, "SIGKILL");
-	} catch {
-		/* processo já saiu */
-	}
 }
 
 /** Espera o processo sair por até `ms`; devolve `false` no timeout. */

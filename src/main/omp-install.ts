@@ -1,28 +1,31 @@
 /**
- * Instalação do OMP pelo método oficial de binário do Windows.
+ * Instalação do OMP pelo método oficial de binário (Windows e Linux x86_64).
  *
- * O instalador oficial (`https://omp.sh/install.ps1 -Binary`) resolve o build
- * em `https://build.stencil.so`, baixa o `omp.exe` pré-compilado, confere o
- * SHA-256 informado pelo serviço e grava em `%LOCALAPPDATA%\omp` (ou no
- * `PI_INSTALL_DIR`). Este módulo repete somente essa parte, sem `iex`, sem
- * shell e sem depender de um Bun global: o aplicativo já inclui o Bun para o
- * host, mas o binário standalone é o que garante um `omp.exe` funcional numa
- * máquina limpa.
+ * O instalador oficial (`https://omp.sh/install.ps1 -Binary` no Windows e
+ * `https://omp.sh/install.sh --binary` no Linux) resolve o build em
+ * `https://build.stencil.so`, baixa o binário pré-compilado, confere o SHA-256
+ * informado pelo serviço e grava em `%LOCALAPPDATA%\omp` (Windows) ou em
+ * `$HOME/.local/bin/omp` (Linux), respeitando `PI_INSTALL_DIR`. Este módulo
+ * repete somente essa parte, sem `iex`, sem shell e sem depender de um Bun
+ * global: o aplicativo já inclui o Bun para o host, mas o binário standalone é
+ * o que garante um OMP funcional numa máquina limpa.
  *
  * Regras de segurança:
  * - URL base fixa do serviço oficial; nenhuma URL/comando vem do renderer.
  * - A resposta do serviço é validada (versão, nome do arquivo, SHA-256).
  * - A URL de download precisa ser HTTPS, sem credenciais e de um host oficial
  *   (`build.stencil.so`, `*.stencil.so` ou o bucket R2 usado pelo serviço).
- * - O arquivo só é promovido depois do checksum; nunca sobrescreve um
- *   `omp.exe` existente. A versão é confirmada com `--version` antes de o
+ * - O arquivo só é promovido depois do checksum; nunca sobrescreve uma
+ *   instalação existente. A versão é confirmada com `--version` antes de o
  *   caminho ser persistido pelo chamador.
+ * - No Linux o binário recebe `chmod 0755` apenas no caminho de destino; no
+ *   Windows nenhuma permissão POSIX é aplicada.
  * - Nada em `~/.omp` é criado ou alterado (o instalador oficial configura o
  *   `shellPath` ali; este aplicativo não faz isso).
  */
 import { createHash, randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { access, copyFile, link, mkdir, open, rm, type FileHandle } from "node:fs/promises";
+import { access, chmod, copyFile, link, mkdir, open, rm, type FileHandle } from "node:fs/promises";
 import * as path from "node:path";
 import { z } from "zod";
 import { OMP_BASELINE_VERSION } from "./runtime";
@@ -89,6 +92,8 @@ export interface OmpInstallerOptions {
 	version?: string;
 	/** Alvo do serviço oficial; padrão: derivado de `process.arch`. */
 	target?: string;
+	/** Plataforma do binário; padrão: `process.platform`. */
+	platform?: NodeJS.Platform;
 	baseUrl?: string;
 	fetchImpl?: OmpFetch;
 	probe: OmpInstallProbe;
@@ -100,7 +105,9 @@ export interface OmpInstallerOptions {
 const buildAnswerSchema = z.object({
 	build: z.object({ version: z.string().min(1) }),
 	file: z.object({
-		name: z.string().min(1).regex(/^[A-Za-z0-9._-]+\.exe$/),
+		// Windows usa `omp-windows-x64.exe`; Linux usa `omp-linux-x64`, sem
+		// extensão. A plataforma é conferida depois do parse.
+		name: z.string().min(1).max(255).regex(/^[A-Za-z0-9._-]+$/),
 		sha256: z.string().regex(/^[0-9a-fA-F]{64}$/),
 		size: z.number().int().positive().optional(),
 	}),
@@ -112,10 +119,28 @@ type BuildAnswer = z.infer<typeof buildAnswerSchema>;
 const API_TIMEOUT_MS = 60_000;
 const DOWNLOAD_TIMEOUT_MS = 900_000;
 
-/** Pasta oficial: `PI_INSTALL_DIR` (mesma variável do instalador) ou `%LOCALAPPDATA%\omp`. */
-export function resolveOmpInstallDir(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * Pasta oficial: `PI_INSTALL_DIR` (mesma variável dos instaladores) ou
+ * `%LOCALAPPDATA%\omp` no Windows e `$HOME/.local/bin` no Linux. No Linux o
+ * binário final é `<pasta>/omp`, exatamente como o `install.sh` oficial.
+ */
+export function resolveOmpInstallDir(
+	env: NodeJS.ProcessEnv = process.env,
+	platform: NodeJS.Platform = process.platform,
+): string {
 	const override = env.PI_INSTALL_DIR?.trim();
 	if (override) return path.resolve(override);
+	if (platform === "linux") {
+		const home = env.HOME?.trim();
+		if (home) return path.join(path.resolve(home), ".local", "bin");
+		throw new OmpInstallError(
+			"UNSUPPORTED_PLATFORM",
+			"HOME missing; set PI_INSTALL_DIR.",
+		);
+	}
+	if (platform !== "win32") {
+		throw new OmpInstallError("UNSUPPORTED_PLATFORM", `unsupported-platform=${platform}`);
+	}
 	const localAppData = env.LOCALAPPDATA?.trim();
 	if (localAppData) return path.join(localAppData, OMP_INSTALL_DIR_NAME);
 	const profile = env.USERPROFILE?.trim();
@@ -126,11 +151,30 @@ export function resolveOmpInstallDir(env: NodeJS.ProcessEnv = process.env): stri
 	);
 }
 
-/** Mesmo mapeamento de arquitetura do instalador oficial. */
-export function ompInstallTarget(arch: string = process.arch): string {
-	if (arch === "x64") return "windows-x86_64";
-	if (arch === "arm64") return "windows-arm64";
-	throw new OmpInstallError("UNSUPPORTED_PLATFORM", `unsupported-arch=${arch}`);
+/** Nome do binário por plataforma; nunca `.exe` no Linux. */
+export function ompBinaryName(platform: NodeJS.Platform = process.platform): string {
+	if (platform === "win32") return "omp.exe";
+	if (platform === "linux") return "omp";
+	throw new OmpInstallError("UNSUPPORTED_PLATFORM", `unsupported-platform=${platform}`);
+}
+
+/** Mesmo mapeamento de arquitetura dos instaladores oficiais. */
+export function ompInstallTarget(
+	arch: string = process.arch,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	if (platform === "win32") {
+		if (arch === "x64") return "windows-x86_64";
+		if (arch === "arm64") return "windows-arm64";
+		throw new OmpInstallError("UNSUPPORTED_PLATFORM", `unsupported-arch=${arch}`);
+	}
+	if (platform === "linux") {
+		// Escopo desta entrega: Linux x86_64. ARM fica de fora por decisão do
+		// projeto, mesmo que o serviço oficial publique linux-arm64.
+		if (arch === "x64") return "linux-x86_64";
+		throw new OmpInstallError("UNSUPPORTED_PLATFORM", `unsupported-arch=${arch}`);
+	}
+	throw new OmpInstallError("UNSUPPORTED_PLATFORM", `unsupported-platform=${platform}`);
 }
 
 function errorCodeOf(error: unknown): string | undefined {
@@ -242,6 +286,24 @@ export function assertTrustedDownloadUrl(raw: string, fileName: string): URL {
 }
 
 /**
+ * O serviço devolve o nome do binário da plataforma. No Windows ele precisa
+ * terminar em `.exe`; no Linux não pode ter extensão `.exe` (o binário oficial
+ * é `omp-linux-x64`). Isso impede que um alvo errado seja gravado como `omp`.
+ */
+function assertPlatformFileName(name: string, platform: NodeJS.Platform): void {
+	const lower = name.toLowerCase();
+	if (platform === "win32") {
+		if (!lower.endsWith(".exe")) {
+			throw new OmpInstallError("NETWORK", `unexpected-file-name=${name}`);
+		}
+		return;
+	}
+	if (lower.endsWith(".exe")) {
+		throw new OmpInstallError("NETWORK", `unexpected-file-name=${name}`);
+	}
+}
+
+/**
  * Instalação de uma execução. O chamador deve usar `OmpInstallService` para
  * garantir single-flight entre cliques/pedidos concorrentes.
  */
@@ -255,10 +317,19 @@ export class OmpInstaller {
 	}
 
 	async install(): Promise<OmpInstallResult> {
+		// Um alvo explícito também identifica a plataforma; isso mantém testes
+		// e chamadas antigas previsíveis em qualquer host.
+		const platform =
+			this.options.platform ??
+			(this.options.target?.startsWith("linux-")
+				? "linux"
+				: this.options.target?.startsWith("windows-")
+					? "win32"
+					: process.platform);
 		const version = this.options.version ?? OMP_INSTALL_VERSION;
-		const target = this.options.target ?? ompInstallTarget();
+		const target = this.options.target ?? ompInstallTarget(process.arch, platform);
 		const installDir = path.resolve(this.options.installDir);
-		const finalPath = path.join(installDir, "omp.exe");
+		const finalPath = path.join(installDir, ompBinaryName(platform));
 		const signal = this.options.signal ?? new AbortController().signal;
 
 		if (signal.aborted) throw new OmpInstallError("ABORTED", "aborted");
@@ -295,11 +366,12 @@ export class OmpInstaller {
 				`service-version=${answer.build.version} expected=${version}`,
 			);
 		}
+		assertPlatformFileName(answer.file.name, platform);
 		const downloadUrl = assertTrustedDownloadUrl(answer.download, answer.file.name);
 		const expectedSha256 = answer.file.sha256.toLowerCase();
 		const tempPath = path.join(
 			installDir,
-			`.omp.download-${process.pid}-${randomBytes(6).toString("hex")}.exe`,
+			`.omp.download-${process.pid}-${randomBytes(6).toString("hex")}${platform === "win32" ? ".exe" : ""}`,
 		);
 
 		let promoted = false;
@@ -349,6 +421,19 @@ export class OmpInstaller {
 					throw new OmpInstallError(
 						"WRITE",
 						`write-failed path=${finalPath} code=${code ?? "unknown"}`,
+					);
+				}
+			}
+
+			if (platform !== "win32") {
+				// O arquivo temporário nasce 0600; o binário oficial precisa ser
+				// executável. Aplicamos a permissão somente no destino promovido.
+				try {
+					await chmod(finalPath, 0o755);
+				} catch (error) {
+					throw new OmpInstallError(
+						"WRITE",
+						`chmod-failed path=${finalPath} code=${errorCodeOf(error) ?? "unknown"}`,
 					);
 				}
 			}

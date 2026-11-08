@@ -41,3 +41,83 @@ jobs:
         run: bunx playwright test
         env:
           CI: "1"
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Instalar dependências (sem scripts de terceiros)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Baixar o binário do Electron
+        run: node node_modules/electron/install.js
+
+      # Apenas no runner de teste: o Ubuntu 24 restringe user namespaces e o
+      # helper do Electron precisa ser setuid root para o sandbox continuar
+      # habilitado. Produção não recebe --no-sandbox nem sysctl global.
+      - name: Preparar chrome-sandbox do teste (setuid root)
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+      - name: Dependências de GUI para Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgbm1 libasound2t64 libgtk-3-0t64 libatspi2.0-0t64 \
+            libnss3 libxss1 libxtst6 libsecret-1-0 libxshmfence1 libatomic1 xdg-utils
+
+      - name: Tipos
+        run: bun run typecheck
+
+      - name: Testes unitários
+        run: bun test tests/unit
+
+      - name: Build
+        run: bun run build
+
+      # Sem --no-sandbox: o Electron usa o sandbox real sob Xvfb.
+      - name: Aceitação (Electron + OMP de teste, Xvfb)
+        run: xvfb-run -a bunx playwright test
+        env:
+          CI: "1"
+
+  linux-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Instalar dependências (sem scripts de terceiros)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Baixar o binário do Electron
+        run: node node_modules/electron/install.js
+
+      - name: Dependências de runtime do empacotamento
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libatomic1
+
+      - name: Build
+        run: bun run build
+
+      - name: Gerar pacotes Linux (.deb + tar.gz)
+        run: bun scripts/dist-linux.ts --no-arch
+
+      - name: Verificar metadados e checksums
+        run: |
+          dpkg-deb --info release/*.deb
+          dpkg-deb --contents release/*.deb | head -50
+          cd release
+          sha256sum -c SHA256SUMS

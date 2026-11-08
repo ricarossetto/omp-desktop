@@ -1,9 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+	access,
+	lstat,
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	readlink,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, gzipSync } from "node:zlib";
 import {
 	DependencyInstallError,
 	GIT_WINDOWS_MINIGIT_SHA256,
@@ -130,6 +141,98 @@ function nodeZip(version = "26.13.0"): Uint8Array {
 	]);
 }
 
+interface TarEntrySpec {
+	name: string;
+	data?: Uint8Array;
+	mode?: number;
+	type?: string;
+	linkName?: string;
+	declaredSize?: number;
+	badChecksum?: boolean;
+}
+
+function tarHeader(spec: TarEntrySpec): Buffer {
+	const name = Buffer.from(spec.name, "utf8");
+	if (name.length > 100) throw new Error(`tar fixture name too long: ${spec.name}`);
+	const link = Buffer.from(spec.linkName ?? "", "utf8");
+	if (link.length > 100) throw new Error(`tar fixture link too long: ${spec.linkName}`);
+	const data = spec.data ?? new Uint8Array(0);
+	const size = spec.declaredSize ?? (spec.type === "5" || spec.type === "2" || spec.type === "1" ? 0 : data.length);
+	const header = Buffer.alloc(512);
+	name.copy(header, 0);
+	// Diretórios precisam de x para criar os filhos; o TAR oficial do Node usa
+	// 0755. Sem isso o fixture 0644 falharia com EACCES no filho.
+	const mode = spec.mode ?? (spec.type === "5" ? 0o755 : 0o644);
+	header.write(mode.toString(8).padStart(7, "0") + "\0", 100, "ascii");
+	header.write("0000000\0", 108, "ascii");
+	header.write("0000000\0", 116, "ascii");
+	header.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii");
+	header.write("00000000000\0", 136, "ascii");
+	header.fill(0x20, 148, 156);
+	header.write(spec.type ?? "0", 156, "ascii");
+	link.copy(header, 157);
+	header.write("ustar\0", 257, "ascii");
+	header.write("00", 263, "ascii");
+	header.write("root", 265, "ascii");
+	header.write("root", 297, "ascii");
+	let checksum = 0;
+	for (const byte of header) checksum += byte;
+	header.write(
+		spec.badChecksum ? "000000\0 " : checksum.toString(8).padStart(6, "0") + "\0 ",
+		148,
+		"ascii",
+	);
+	return header;
+}
+
+function buildTarGz(specs: TarEntrySpec[]): Uint8Array {
+	const parts: Buffer[] = [];
+	for (const spec of specs) {
+		parts.push(tarHeader(spec));
+		const data = spec.data ?? new Uint8Array(0);
+		if (data.length > 0) {
+			parts.push(Buffer.from(data));
+			const padding = (512 - (data.length % 512)) % 512;
+			if (padding > 0) parts.push(Buffer.alloc(padding));
+		}
+	}
+	parts.push(Buffer.alloc(1024));
+	return new Uint8Array(gzipSync(Buffer.concat(parts)));
+}
+
+function linuxNodeTarGz(version = "26.13.0"): Uint8Array {
+	const root = `node-v${version}-linux-x64`;
+	return buildTarGz([
+		{ name: `${root}/`, type: "5", mode: 0o755 },
+		{ name: `${root}/bin/`, type: "5", mode: 0o755 },
+		{ name: `${root}/bin/node`, data: utf8("fake node"), mode: 0o755 },
+		{
+			name: `${root}/bin/npm`,
+			type: "2",
+			linkName: "../lib/node_modules/npm/bin/npm-cli.js",
+		},
+		{
+			name: `${root}/bin/npx`,
+			type: "2",
+			linkName: "../lib/node_modules/npm/bin/npx-cli.js",
+		},
+		{ name: `${root}/lib/`, type: "5" },
+		{ name: `${root}/lib/node_modules/`, type: "5" },
+		{ name: `${root}/lib/node_modules/npm/`, type: "5" },
+		{ name: `${root}/lib/node_modules/npm/bin/`, type: "5" },
+		{
+			name: `${root}/lib/node_modules/npm/bin/npm-cli.js`,
+			data: utf8("fake npm cli"),
+			mode: 0o755,
+		},
+		{
+			name: `${root}/lib/node_modules/npm/bin/npx-cli.js`,
+			data: utf8("fake npx cli"),
+			mode: 0o755,
+		},
+	]);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers de rede e ambiente
 // ---------------------------------------------------------------------------
@@ -195,6 +298,54 @@ function toolsRoot(root: string): string {
 	return path.join(root, "AppData", "Local", "omp-desktop", "tools");
 }
 
+function linuxEnv(root: string, pathValue = ""): NodeJS.ProcessEnv {
+	return {
+		HOME: path.join(root, "home"),
+		XDG_DATA_HOME: path.join(root, "xdg"),
+		PATH: pathValue,
+	};
+}
+
+function linuxToolsRoot(root: string): string {
+	return path.join(root, "xdg", "omp-desktop", "tools");
+}
+
+function makeLinuxInstaller(
+	root: string,
+	options: OptionalDependencyInstallerOptions = {},
+): OptionalDependencyInstaller {
+	return new OptionalDependencyInstaller({
+		env: linuxEnv(root),
+		platform: "linux",
+		arch: "x64",
+		...options,
+	});
+}
+
+function linuxNodeArtifact(
+	tar: Uint8Array,
+	overrides: Partial<DependencyArtifact> = {},
+): DependencyArtifact {
+	return {
+		kind: "node",
+		version: "26.13.0",
+		url: "https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.gz",
+		sha256: sha256(tar),
+		fileName: "node-v26.13.0-linux-x64.tar.gz",
+		maxDownloadBytes: 16 * 1024 * 1024,
+		stripTopLevelDir: true,
+		archiveFormat: "tar.gz",
+		executablePath: "bin/node",
+		requiredPaths: [
+			"bin/npm",
+			"bin/npx",
+			"lib/node_modules/npm/bin/npm-cli.js",
+			"lib/node_modules/npm/bin/npx-cli.js",
+		],
+		...overrides,
+	};
+}
+
 function makeInstaller(
 	root: string,
 	options: OptionalDependencyInstallerOptions = {},
@@ -254,10 +405,10 @@ async function exists(file: string): Promise<boolean> {
 	}
 }
 
-function nodeIndex(version = "26.13.0", arch = "x64"): unknown {
+function nodeIndex(version = "26.13.0", tag = "win-x64-zip"): unknown {
 	return [
-		{ version: "v27.0.0", files: [`win-${arch}-zip`], lts: false },
-		{ version: `v${version}`, files: [`win-${arch}-zip`], lts: "Lithium" },
+		{ version: "v27.0.0", files: [tag], lts: false },
+		{ version: `v${version}`, files: [tag], lts: "Lithium" },
 	];
 }
 
@@ -270,20 +421,46 @@ function shasums(fileName: string, bytes: Uint8Array): string {
 // ---------------------------------------------------------------------------
 
 describe("caminhos gerenciados", () => {
-	test("resolve raiz por usuário e diretórios de PATH", () => {
+	test("resolve raiz por usuário e diretórios de PATH no Windows", () => {
 		const localAppData = "C:\\Users\\teste\\AppData\\Local";
-		expect(resolveDependencyToolsRoot({ LOCALAPPDATA: localAppData })).toBe(
-			path.join(localAppData, "omp-desktop", "tools"),
+		expect(resolveDependencyToolsRoot({ LOCALAPPDATA: localAppData }, "win32")).toBe(
+			path.join(path.resolve(localAppData), "omp-desktop", "tools"),
 		);
-		expect(resolveDependencyToolsRoot({ USERPROFILE: "C:\\Users\\teste" })).toBe(
-			path.join("C:\\Users\\teste", "AppData", "Local", "omp-desktop", "tools"),
+		expect(resolveDependencyToolsRoot({ USERPROFILE: "C:\\Users\\teste" }, "win32")).toBe(
+			path.join(
+				path.resolve("C:\\Users\\teste"),
+				"AppData",
+				"Local",
+				"omp-desktop",
+				"tools",
+			),
 		);
-		expect(() => resolveDependencyToolsRoot({})).toThrow(DependencyInstallError);
-		expect(optionalDependencyBinDirs({ LOCALAPPDATA: localAppData })).toEqual([
-			path.join(localAppData, "omp-desktop", "tools", "git", "cmd"),
-			path.join(localAppData, "omp-desktop", "tools", "node"),
+		expect(() => resolveDependencyToolsRoot({}, "win32")).toThrow(DependencyInstallError);
+		expect(optionalDependencyBinDirs({ LOCALAPPDATA: localAppData }, "win32")).toEqual([
+			path.join(path.resolve(localAppData), "omp-desktop", "tools", "git", "cmd"),
+			path.join(path.resolve(localAppData), "omp-desktop", "tools", "node"),
 		]);
-		expect(optionalDependencyBinDirs({})).toEqual([]);
+		expect(optionalDependencyBinDirs({}, "win32")).toEqual([]);
+	});
+
+	test("Linux usa XDG_DATA_HOME absoluto ou $HOME/.local/share e só node/bin no PATH", () => {
+		const root = path.join(tmpdir(), "omp-linux-home");
+		const xdg = path.join(root, "xdg");
+		expect(resolveDependencyToolsRoot({ XDG_DATA_HOME: xdg, HOME: root }, "linux")).toBe(
+			path.join(xdg, "omp-desktop", "tools"),
+		);
+		expect(resolveDependencyToolsRoot({ HOME: root }, "linux")).toBe(
+			path.join(root, ".local", "share", "omp-desktop", "tools"),
+		);
+		// XDG relativo é ignorado; cai no HOME.
+		expect(
+			resolveDependencyToolsRoot({ XDG_DATA_HOME: "relative", HOME: root }, "linux"),
+		).toBe(path.join(root, ".local", "share", "omp-desktop", "tools"));
+		expect(() => resolveDependencyToolsRoot({}, "linux")).toThrow(DependencyInstallError);
+		expect(optionalDependencyBinDirs({ XDG_DATA_HOME: xdg }, "linux")).toEqual([
+			path.join(xdg, "omp-desktop", "tools", "node", "bin"),
+		]);
+		expect(optionalDependencyBinDirs({}, "linux")).toEqual([]);
 	});
 });
 
@@ -448,10 +625,10 @@ describe("sondagem local", () => {
 		}
 	});
 
-	test("plataforma não Windows é recusada", async () => {
+	test("plataforma fora de Windows/Linux é recusada", async () => {
 		const root = await tempRoot();
 		try {
-			const installer = makeInstaller(root, { platform: "linux" });
+			const installer = makeInstaller(root, { platform: "darwin" });
 			await expect(installer.probe("git")).resolves.toMatchObject({
 				state: "error",
 				code: "UNSUPPORTED_PLATFORM",
@@ -728,6 +905,533 @@ describe("instalação do Node.js LTS", () => {
 				code: "ARCHIVE_INVALID",
 			});
 			expect(await exists(path.join(toolsRoot(root), "node"))).toBe(false);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Linux: Git nativo e Node TAR.GZ
+// ---------------------------------------------------------------------------
+
+describe("Linux: Git nativo", () => {
+	test("probe usa somente PATH absoluto e não baixa nada", async () => {
+		const root = await tempRoot();
+		try {
+			const bin = path.join(root, "bin");
+			await mkdir(bin, { recursive: true });
+			await writeFile(path.join(bin, "git"), "global");
+			const { fetchImpl, calls } = fakeFetch({});
+			const installer = makeLinuxInstaller(root, {
+				env: linuxEnv(root, bin),
+				fetchImpl,
+				probeRunner: probeVersions({ git: "2.43.0" }),
+			});
+			await expect(installer.probe("git")).resolves.toEqual({
+				state: "installed",
+				kind: "git",
+				executablePath: path.join(bin, "git"),
+				version: "2.43.0",
+			});
+			expect(calls).toEqual([]);
+
+			const missing = makeLinuxInstaller(root, {
+				env: linuxEnv(root, ""),
+				fetchImpl,
+				probeRunner: async () => undefined,
+			});
+			await expect(missing.probe("git")).resolves.toEqual({ state: "missing", kind: "git" });
+			expect(calls).toEqual([]);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("install sem Git nativo retorna MANUAL_INSTALL_REQUIRED sem rede", async () => {
+		const root = await tempRoot();
+		try {
+			const { fetchImpl, calls } = fakeFetch({});
+			const installer = makeLinuxInstaller(root, { fetchImpl });
+			await expect(installer.install("git")).rejects.toMatchObject({
+				code: "MANUAL_INSTALL_REQUIRED",
+			});
+			expect(calls).toEqual([]);
+			expect(await exists(linuxToolsRoot(root))).toBe(false);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("install adota Git nativo do PATH intacto", async () => {
+		const root = await tempRoot();
+		try {
+			const bin = path.join(root, "bin");
+			await mkdir(bin, { recursive: true });
+			const executable = path.join(bin, "git");
+			await writeFile(executable, "global");
+			const { fetchImpl, calls } = fakeFetch({});
+			const installer = makeLinuxInstaller(root, {
+				env: linuxEnv(root, bin),
+				fetchImpl,
+				probeRunner: probeVersions({ git: "2.43.0" }),
+			});
+			await expect(installer.install("git")).resolves.toEqual({
+				kind: "git",
+				executablePath: executable,
+				version: "2.43.0",
+			});
+			expect(calls).toEqual([]);
+			expect(await readFile(executable, "utf8")).toBe("global");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe.skipIf(process.platform === "win32")("Linux: Node.js LTS TAR.GZ", () => {
+	test.skipIf(process.platform === "win32")(
+		"resolve LTS linux-x64, confere SHASUMS, extrai symlinks oficiais e ativa",
+		async () => {
+		const root = await tempRoot();
+		try {
+			const tar = linuxNodeTarGz("26.13.0");
+			const artifact = linuxNodeArtifact(tar);
+			const shasumsUrl = "https://nodejs.org/dist/v26.13.0/SHASUMS256.txt";
+			const { fetchImpl, calls } = fakeFetch({
+				json: new Map([[NODE_LTS_INDEX_URL, nodeIndex("26.13.0", "linux-x64")]]),
+				text: new Map([[shasumsUrl, shasums(artifact.fileName, tar)]]),
+				bodies: new Map([[artifact.url, tar]]),
+			});
+			const installer = makeLinuxInstaller(root, {
+				fetchImpl,
+				probeRunner: probeVersions({ node: "26.13.0" }),
+			});
+			const result = await installer.install("node");
+			const nodeRoot = path.join(linuxToolsRoot(root), "node");
+			expect(result).toEqual({
+				kind: "node",
+				executablePath: path.join(nodeRoot, "bin", "node"),
+				version: "26.13.0",
+			});
+			expect(await readFile(path.join(nodeRoot, "bin", "node"), "utf8")).toBe("fake node");
+			expect(await readlink(path.join(nodeRoot, "bin", "npm"))).toBe(
+				"../lib/node_modules/npm/bin/npm-cli.js",
+			);
+			expect((await lstat(path.join(nodeRoot, "bin", "npm"))).isSymbolicLink()).toBe(true);
+			expect(
+				await readFile(path.join(nodeRoot, "lib", "node_modules", "npm", "bin", "npm-cli.js"), "utf8"),
+			).toBe("fake npm cli");
+			expect(await exists(path.join(nodeRoot, "node-v26.13.0-linux-x64"))).toBe(false);
+			if (process.platform !== "win32") {
+				expect((await stat(path.join(nodeRoot, "bin", "node"))).mode & 0o111).not.toBe(0);
+			}
+			expect(calls).toEqual([NODE_LTS_INDEX_URL, shasumsUrl, artifact.url]);
+			const names = await readdir(linuxToolsRoot(root));
+			expect(names.some((name) => name.startsWith(".tmp-"))).toBe(false);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("adota Node global do PATH sem baixar", async () => {
+		const root = await tempRoot();
+		try {
+			const bin = path.join(root, "bin");
+			await mkdir(bin, { recursive: true });
+			const executable = path.join(bin, "node");
+			await writeFile(executable, "global node");
+			const { fetchImpl, calls } = fakeFetch({});
+			const installer = makeLinuxInstaller(root, {
+				env: linuxEnv(root, bin),
+				fetchImpl,
+				probeRunner: probeVersions({ node: "22.0.0" }),
+			});
+			await expect(installer.install("node")).resolves.toEqual({
+				kind: "node",
+				executablePath: executable,
+				version: "22.0.0",
+			});
+			expect(calls).toEqual([]);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("instalação gerenciada incompleta não é sobrescrita", async () => {
+		const root = await tempRoot();
+		try {
+			await mkdir(path.join(linuxToolsRoot(root), "node", "bin"), { recursive: true });
+			await writeFile(path.join(linuxToolsRoot(root), "node", "bin", "node"), "existing");
+			const { fetchImpl, calls } = fakeFetch({});
+			const installer = makeLinuxInstaller(root, { fetchImpl });
+			await expect(installer.install("node")).rejects.toMatchObject({
+				code: "INCOMPLETE_INSTALL",
+			});
+			expect(calls).toEqual([]);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("checksum divergente e versão divergente não ativam", async () => {
+		const root = await tempRoot();
+		try {
+			const tar = linuxNodeTarGz("26.13.0");
+			const artifact = linuxNodeArtifact(tar);
+			const shasumsUrl = "https://nodejs.org/dist/v26.13.0/SHASUMS256.txt";
+			const wrong = makeLinuxInstaller(root, {
+				fetchImpl: fakeFetch({
+					json: new Map([[NODE_LTS_INDEX_URL, nodeIndex("26.13.0", "linux-x64")]]),
+					text: new Map([
+						[shasumsUrl, `${"0".repeat(64)}  ${artifact.fileName}\n`],
+					]),
+					bodies: new Map([[artifact.url, tar]]),
+				}).fetchImpl,
+				probeRunner: probeVersions({ node: "26.13.0" }),
+			});
+			await expect(wrong.install("node")).rejects.toMatchObject({ code: "CHECKSUM" });
+			expect(await exists(path.join(linuxToolsRoot(root), "node"))).toBe(false);
+
+			const mismatch = makeLinuxInstaller(root, {
+				fetchImpl: fakeFetch({
+					bodies: new Map([[artifact.url, tar]]),
+				}).fetchImpl,
+				artifactResolver: () => artifact,
+				probeRunner: probeVersions({ node: "9.9.9" }),
+			});
+			await expect(mismatch.install("node")).rejects.toMatchObject({
+				code: "VERSION_MISMATCH",
+			});
+			expect(await exists(path.join(linuxToolsRoot(root), "node"))).toBe(false);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("arquitetura Linux ARM é recusada no escopo x86_64", async () => {
+		const root = await tempRoot();
+		try {
+			const installer = makeLinuxInstaller(root, { arch: "arm64" });
+			await expect(installer.install("node")).rejects.toMatchObject({
+				code: "UNSUPPORTED_ARCH",
+			});
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("probe e install reportam MISSING_SYSTEM_LIBRARY acionável", async () => {
+		const root = await tempRoot();
+		try {
+			const tar = linuxNodeTarGz("26.13.0");
+			const artifact = linuxNodeArtifact(tar);
+			const installer = makeLinuxInstaller(root, {
+				fetchImpl: fakeFetch({ bodies: new Map([[artifact.url, tar]]) }).fetchImpl,
+				artifactResolver: () => artifact,
+				probeRunner: async () => {
+					throw new DependencyInstallError(
+						"MISSING_SYSTEM_LIBRARY",
+						"missing-system-library=libatomic.so.1",
+					);
+				},
+			});
+			await expect(installer.install("node")).rejects.toMatchObject({
+				code: "MISSING_SYSTEM_LIBRARY",
+			});
+			expect(await exists(path.join(linuxToolsRoot(root), "node"))).toBe(false);
+
+			const nodeDir = path.join(linuxToolsRoot(root), "node");
+			await mkdir(path.join(nodeDir, "bin"), { recursive: true });
+			await writeFile(path.join(nodeDir, "bin", "node"), "existing");
+			await writeFile(path.join(nodeDir, "bin", "npm"), "existing");
+			await writeFile(path.join(nodeDir, "bin", "npx"), "existing");
+			await mkdir(path.join(nodeDir, "lib", "node_modules", "npm", "bin"), {
+				recursive: true,
+			});
+			await writeFile(
+				path.join(nodeDir, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+				"existing",
+			);
+			await writeFile(
+				path.join(nodeDir, "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+				"existing",
+			);
+			await expect(installer.probe("node")).resolves.toMatchObject({
+				state: "error",
+				code: "MISSING_SYSTEM_LIBRARY",
+			});
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe.skipIf(process.platform === "win32")("Linux: segurança do TAR.GZ", () => {
+	async function installTar(tar: Uint8Array): Promise<{ code?: string; root: string }> {
+		const root = await tempRoot();
+		const artifact = linuxNodeArtifact(tar);
+		const installer = makeLinuxInstaller(root, {
+			fetchImpl: fakeFetch({ bodies: new Map([[artifact.url, tar]]) }).fetchImpl,
+			artifactResolver: () => artifact,
+			probeRunner: probeVersions({ node: "26.13.0" }),
+		});
+		try {
+			await installer.install("node");
+			return { root };
+		} catch (error) {
+			return {
+				root,
+				code: error instanceof DependencyInstallError ? error.code : "UNKNOWN",
+			};
+		}
+	}
+
+	test("rejeita travessia, caminho absoluto, symlink e hardlink que escapam", async () => {
+		const cases: Array<{ name: string; tar: Uint8Array; code: string }> = [
+			{
+				name: "traversal",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/../evil", data: utf8("evil") },
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "absolute",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "/etc/evil", data: utf8("evil") },
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "symlink-escape",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/link",
+						type: "2",
+						linkName: "../../outside",
+					},
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "symlink-absolute",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/link", type: "2", linkName: "/etc/passwd" },
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "symlink-ancestor",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/sub/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/link",
+						type: "2",
+						linkName: "sub",
+					},
+					{
+						name: "node-v26.13.0-linux-x64/link/evil",
+						data: utf8("evil"),
+					},
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "hardlink-escape",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/hard",
+						type: "1",
+						linkName: "../../outside",
+					},
+				]),
+				code: "ARCHIVE_INVALID",
+			},
+			{
+				name: "chained-symlink-escape",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/a/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/a/b/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/a/b/c/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/a/b/c/x",
+						type: "2",
+						linkName: "../../../d",
+					},
+					{
+						name: "node-v26.13.0-linux-x64/a/b/c/y",
+						type: "2",
+						linkName: "x/../../..",
+					},
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "directory-over-symlink",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/sub/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/link",
+						type: "2",
+						linkName: "sub",
+					},
+					{ name: "node-v26.13.0-linux-x64/link/", type: "5" },
+				]),
+				code: "PATH_ESCAPE",
+			},
+			{
+				name: "hardlink-through-symlink",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/sub/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/sub/file",
+						data: utf8("target"),
+					},
+					{
+						name: "node-v26.13.0-linux-x64/link",
+						type: "2",
+						linkName: "sub",
+					},
+					{
+						name: "node-v26.13.0-linux-x64/hard",
+						type: "1",
+						linkName: "node-v26.13.0-linux-x64/link/file",
+					},
+				]),
+				code: "PATH_ESCAPE",
+			},
+		];
+		for (const testCase of cases) {
+			const result = await installTar(testCase.tar);
+			try {
+				expect({ name: testCase.name, code: result.code }).toEqual({
+					name: testCase.name,
+					code: testCase.code,
+				});
+				expect(await exists(path.join(linuxToolsRoot(result.root), "node"))).toBe(false);
+			} finally {
+				await rm(result.root, { recursive: true, force: true });
+			}
+		}
+	});
+
+	test("rejeita tamanho excessivo, bomba total, tipo desconhecido e checksum TAR", async () => {
+		const cases: Array<{ name: string; tar: Uint8Array; code: string }> = [
+			{
+				name: "entry-too-large",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/bin/node",
+						declaredSize: 300 * 1024 * 1024,
+					},
+				]),
+				code: "SIZE_LIMIT",
+			},
+			{
+				name: "archive-too-large",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/a",
+						declaredSize: 600 * 1024 * 1024,
+					},
+					{
+						name: "node-v26.13.0-linux-x64/b",
+						declaredSize: 600 * 1024 * 1024,
+					},
+				]),
+				code: "SIZE_LIMIT",
+			},
+			{
+				name: "unsupported-type",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{ name: "node-v26.13.0-linux-x64/x", type: "9" },
+				]),
+				code: "ARCHIVE_INVALID",
+			},
+			{
+				name: "bad-checksum",
+				tar: buildTarGz([
+					{ name: "node-v26.13.0-linux-x64/", type: "5" },
+					{
+						name: "node-v26.13.0-linux-x64/bin/node",
+						data: utf8("fake node"),
+						badChecksum: true,
+					},
+				]),
+				code: "ARCHIVE_INVALID",
+			},
+		];
+		for (const testCase of cases) {
+			const result = await installTar(testCase.tar);
+			try {
+				expect({ name: testCase.name, code: result.code }).toEqual({
+					name: testCase.name,
+					code: testCase.code,
+				});
+			} finally {
+				await rm(result.root, { recursive: true, force: true });
+			}
+		}
+	});
+
+	test("cancel durante o download TAR limpa temporários e libera o single-flight", async () => {
+		const root = await tempRoot();
+		try {
+			const tar = linuxNodeTarGz("26.13.0");
+			const artifact = linuxNodeArtifact(tar);
+			const { fetchImpl } = fakeFetch({
+				override: (url, init) => {
+					if (url !== artifact.url) return undefined;
+					const stream = new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(tar.subarray(0, 1024));
+							init.signal?.addEventListener(
+								"abort",
+								() => {
+									try {
+										controller.error(new DOMException("aborted", "AbortError"));
+									} catch {
+										// stream já encerrado
+									}
+								},
+								{ once: true },
+							);
+						},
+					});
+					return new Response(stream, {
+						headers: { "content-length": String(tar.length) },
+					});
+				},
+			});
+			const installer = makeLinuxInstaller(root, {
+				fetchImpl,
+				artifactResolver: () => artifact,
+				probeRunner: probeVersions({ node: "26.13.0" }),
+			});
+			const started = Promise.withResolvers<void>();
+			const promise = installer.install("node", {
+				onProgress: (progress) => {
+					if (progress.phase === "downloading") started.resolve();
+				},
+			});
+			await started.promise;
+			installer.cancel();
+			await expect(promise).rejects.toMatchObject({ code: "ABORTED" });
+			const names = await readdir(linuxToolsRoot(root));
+			expect(names.some((name) => name.startsWith(".tmp-"))).toBe(false);
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

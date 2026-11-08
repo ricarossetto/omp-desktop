@@ -20,12 +20,15 @@ Componentes distribuídos com o aplicativo:
 - Dependências transitivas do OMP — ver THIRD-PARTY-NOTICES-OMP.txt e avisos
   preservados nos diretórios dos pacotes em resources/app/node_modules.
 
-O runtime Bun 1.4.4 é incluído no instalador como `resources/bun/bun.exe`.
+O runtime Bun 1.4.4 é incluído no aplicativo como `resources/bun/bun`
+(Linux x86_64) ou `resources/bun/bun.exe` (Windows x64).
 Seus avisos oficiais, incluindo JavaScriptCore/WebKit e componentes vinculados,
 estão em LICENSE-Bun.md. Código-fonte correspondente:
 https://github.com/oven-sh/bun/tree/bun-v1.4.4
 O executável OMP não é redistribuído: o aplicativo usa a instalação OMP já
 presente no computador; a biblioteca @oh-my-pi/pi-coding-agent é distribuída.
+O Node.js também não é redistribuído: quando instalado pelo aplicativo, vem do
+release oficial em um diretório de dados do usuário.
 
 Referências de arquitetura e UX do OpenCode Desktop são citadas no plano do
 projeto. Nenhum código proprietário foi copiado; trechos reutilizados de

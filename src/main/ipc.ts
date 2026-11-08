@@ -27,7 +27,7 @@ import {
 } from "../shared/contracts";
 import type { DependencyKind } from "../shared/dependency-install-types";
 import type { SessionSnapshot } from "../shared/session-types";
-import { readWorkspaceFile, externalOpenMode, resolveFileForExternalOpen } from "./files";
+import { readWorkspaceFile, externalOpenMode, isExecutableFile, resolveFileForExternalOpen } from "./files";
 import { gitCommit, gitDiff, gitStage, gitStatus, gitUnstage, GitError, type GitCommitResult } from "./git";
 import { HostClientError } from "./host-client";
 import { isAuthorizedSender, isAllowedRendererUrl, type AuthorizedWindow } from "./ipc-guard";
@@ -391,13 +391,16 @@ export class MainBridge {
 
 			case "runtime.selectOmp": {
 				const win = this.requireWindow();
+				const windows = process.platform === "win32";
 				const result = await dialog.showOpenDialog(win, {
-					title: "Selecionar omp.exe",
+					title: windows ? "Selecionar omp.exe" : "Selecionar o executável OMP",
 					properties: ["openFile"],
-					filters: [
-						{ name: "Executável OMP", extensions: ["exe", "cmd", "bat"] },
-						{ name: "Todos os arquivos", extensions: ["*"] },
-					],
+					filters: windows
+						? [
+								{ name: "Executável OMP", extensions: ["exe", "cmd", "bat"] },
+								{ name: "Todos os arquivos", extensions: ["*"] },
+							]
+						: [{ name: "Todos os arquivos", extensions: ["*"] }],
 				});
 				const selected = result.filePaths[0];
 				if (result.canceled || !selected) return this.deps.getStatus();
@@ -766,8 +769,10 @@ export class MainBridge {
 				const filePath = await resolveFileForExternalOpen(workspace.path, request.path);
 				// Allowlist: só extensões inofensivas são entregues ao app padrão.
 				// Qualquer outro tipo (executável/script/atalho/HTML ativo) apenas
-				// aparece no Explorer; o Windows não o executa.
-				if (externalOpenMode(filePath) === "reveal") {
+				// aparece no gerenciador de arquivos; o sistema não o executa.
+				// No POSIX o bit de execução também força `reveal`, porque alguns
+				// desktops executam o arquivo ao abri-lo por associação.
+				if (externalOpenMode(filePath) === "reveal" || (await isExecutableFile(filePath))) {
 					shell.showItemInFolder(filePath);
 					return { opened: false, revealed: true };
 				}
@@ -775,7 +780,7 @@ export class MainBridge {
 				if (failure) {
 					throw new HostClientError(
 						"INTERNAL",
-						"Não foi possível abrir o arquivo no editor externo. Verifique o aplicativo padrão do Windows.",
+						"Não foi possível abrir o arquivo no aplicativo externo. Verifique o aplicativo padrão do sistema.",
 					);
 				}
 				return { opened: true, revealed: false };

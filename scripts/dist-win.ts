@@ -8,9 +8,10 @@
  */
 import { copyFile, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
-import config from "../electron-builder.config";
+import { createBuilderConfig } from "../electron-builder.config";
 
 const root = path.resolve(import.meta.dir, "..");
+const config = createBuilderConfig("win32");
 
 async function assertBuilt(relative: string): Promise<void> {
 	try {

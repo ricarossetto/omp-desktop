@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
 	isOmpVersionCompatible,
@@ -198,3 +198,115 @@ describe("dependências opcionais no status", () => {
 		await rm(dir, { recursive: true, force: true });
 	});
 });
+
+if (process.platform !== "win32") {
+	describe("runtime POSIX", () => {
+		test("resolveShell usa $SHELL absoluto executável e cai em shell POSIX real", async () => {
+			const dir = await mkdtemp(path.join(tmpdir(), "omp-runtime-shell-"));
+			const resolver = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: false,
+				execPath: "bun",
+				env: { ...process.env, SHELL: "/bin/sh" },
+			});
+			expect(await resolver.resolveShell()).toBe("/bin/sh");
+
+			const invalid = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: false,
+				execPath: "bun",
+				env: { ...process.env, SHELL: "shell-relativo" },
+			});
+			const fallback = await invalid.resolveShell();
+			expect(path.isAbsolute(fallback)).toBe(true);
+			expect(fallback).not.toBe("shell-relativo");
+
+			const falseShell = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: false,
+				execPath: "bun",
+				env: { ...process.env, SHELL: "/bin/false" },
+			});
+			expect(await falseShell.resolveShell()).not.toBe("/bin/false");
+			await rm(dir, { recursive: true, force: true });
+		});
+
+		test("pacote Linux procura resources/bun/bun executável", async () => {
+			const dir = await mkdtemp(path.join(tmpdir(), "omp-runtime-bun-"));
+			const bunDir = path.join(dir, "bun");
+			await mkdir(bunDir, { recursive: true });
+			const bun = path.join(bunDir, "bun");
+			await writeFile(bun, "#!/bin/sh\nexit 0\n");
+			await chmod(bun, 0o755);
+			const resolver = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: true,
+				execPath: "/opt/omp-desktop/omp-desktop",
+			});
+			expect(await resolver.resolveBun()).toBe(bun);
+			await rm(dir, { recursive: true, force: true });
+		});
+
+		test("probe recusa .cmd do Windows e resolve omp sem extensão no PATH", async () => {
+			const dir = await mkdtemp(path.join(tmpdir(), "omp-runtime-path-"));
+			const cmd = path.join(dir, "omp.cmd");
+			await writeFile(cmd, "@echo off\r\necho omp/18.16.0\r\n");
+			await chmod(cmd, 0o755);
+			const resolver = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: false,
+				execPath: "bun",
+				env: { ...process.env, OMP_DESKTOP_OMP_PATH: cmd },
+			});
+			const rejected = await resolver.probeOmpPath(cmd);
+			expect(rejected.compatible).toBe(false);
+			expect(rejected.message).toMatch(/cmd/i);
+
+			const binDir = path.join(dir, "bin");
+			await mkdir(binDir, { recursive: true });
+			const omp = path.join(binDir, "omp");
+			await writeFile(omp, "#!/bin/sh\necho omp/18.16.0\n");
+			await chmod(omp, 0o755);
+			const pathResolver = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: false,
+				execPath: "bun",
+				env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`, HOME: process.env.HOME },
+			});
+			const found = await pathResolver.resolveOmp();
+			expect(found.source).toBe("path");
+			expect(found.ompPath).toBe(omp);
+			expect(found.compatible).toBe(true);
+			await rm(dir, { recursive: true, force: true });
+		});
+
+		test("status informa a plataforma atual", async () => {
+			const dir = await mkdtemp(path.join(tmpdir(), "omp-runtime-platform-"));
+			const fixture = path.join(dir, "omp-fixture.ts");
+			await writeFile(fixture, 'console.log("omp/18.16.0");\n');
+			const resolver = new RuntimeResolver({
+				userDataDir: dir,
+				appPath: dir,
+				resourcesPath: dir,
+				isPackaged: false,
+				execPath: "bun",
+				env: { ...process.env, OMP_DESKTOP_OMP_PATH: fixture },
+			});
+			const status = await resolver.buildStatus(true);
+			expect((status as { platform?: string }).platform).toBe(process.platform);
+			await rm(dir, { recursive: true, force: true });
+		});
+	});
+}

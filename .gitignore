@@ -6,6 +6,11 @@ release
 test-results
 .cache
 .tmp-trace/
+resources/bun/
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.pkg.tar.*
+packaging/arch/OMP-Desktop-*-linux-x64.tar.gz
 .env
 .env.*
 !.env.example

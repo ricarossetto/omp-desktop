@@ -131,6 +131,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 	// Dependências vêm sempre do store (fonte única), então o progresso de
 	// Git/Node não regride o OMP capturado no clique.
 	const effectiveRuntime = effectiveOnboardingRuntime(runtimeOverride, runtime);
+	const linux = effectiveRuntime?.platform === "linux";
 	const [settings, setSettings] = useState<SettingsSnapshot | null>(null);
 	const [settingsError, setSettingsError] = useState<string | null>(null);
 	const [settingsAttempted, setSettingsAttempted] = useState(false);
@@ -423,7 +424,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
 							</div>
 							<p className="onb__warning" role="note">
 								<Icon name="warning" className="icon--sm" />
-								<span>{t("onb.welcome.unsigned")}</span>
+								<span>{t(linux ? "onb.welcome.unsignedLinux" : "onb.welcome.unsigned")}</span>
 							</p>
 						</>
 					) : null}

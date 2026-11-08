@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ompLaunchSpec, parseJsonOutput, runOmp } from "../../src/host/omp-cli";
+import { ompLaunchSpec, parseJsonOutput, resolveOmpPath, runOmp } from "../../src/host/omp-cli";
 
 const dirs: string[] = [];
 
@@ -16,7 +16,8 @@ afterEach(async () => {
 	await Promise.all(dirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
 });
 
-describe("lançamento do OMP no Windows", () => {
+if (process.platform === "win32") {
+	describe("lançamento do OMP no Windows", () => {
 	test("shim .cmd com alvo %~dp0 resolve o script e evita o cmd.exe", async () => {
 		const dir = await tempDir();
 		const target = path.join(dir, "cli.js");
@@ -81,4 +82,48 @@ describe("lançamento do OMP no Windows", () => {
 		expect(parsed?.key).toBe("modelRoleStorage");
 		expect(typeof parsed?.value).toBe("string");
 	});
+	});
+}
+
+describe("lançamento do OMP por argv", () => {
+	test("executa script .ts em caminho com espaços via Bun", async () => {
+		const dir = await tempDir();
+		const spaced = path.join(dir, "pasta com espaço");
+		await fs.promises.mkdir(spaced, { recursive: true });
+		const script = path.join(spaced, "omp fixture.ts");
+		await fs.promises.writeFile(script, 'console.log("omp/18.16.0");\n', "utf8");
+		const result = await runOmp(script, ["--version"], { timeoutMs: 20_000 });
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("18.16.0");
+	});
 });
+
+if (process.platform !== "win32") {
+	describe("lançamento do OMP no POSIX", () => {
+		test(".cmd/.bat do Windows são recusados", () => {
+			expect(() => ompLaunchSpec("/tmp/omp.cmd", ["--version"])).toThrow(/cmd/i);
+			expect(() => ompLaunchSpec("/tmp/omp.bat", ["--version"])).toThrow(/cmd/i);
+		});
+
+		test("binário sem extensão é executado direto, sem shell", () => {
+			const spec = ompLaunchSpec("/home/usuaria/.local/bin/omp", ["--version"]);
+			expect(spec.command).toBe("/home/usuaria/.local/bin/omp");
+			expect(spec.args).toEqual(["--version"]);
+			expect(spec.windowsVerbatimArguments).toBeUndefined();
+		});
+
+		test("resolveOmpPath exige execução para binário e aceita script do Bun", async () => {
+			const dir = await tempDir();
+			const env = { PATH: dir };
+			const omp = path.join(dir, "omp");
+			await fs.promises.writeFile(omp, "#!/bin/sh\nexit 0\n", "utf8");
+			expect(resolveOmpPath(omp, env)).toBeUndefined();
+			await fs.promises.chmod(omp, 0o755);
+			expect(resolveOmpPath(omp, env)).toBe(omp);
+
+			const script = path.join(dir, "omp.ts");
+			await fs.promises.writeFile(script, "console.log('x');\n", "utf8");
+			expect(resolveOmpPath(script, env)).toBe(script);
+		});
+	});
+}

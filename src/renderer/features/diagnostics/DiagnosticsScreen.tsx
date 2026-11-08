@@ -78,6 +78,10 @@ function asRuntimeStatus(raw: unknown): RuntimeStatus | null {
 	if (!isRecord(value) || !isRuntimePhase(value.phase)) return null;
 	return {
 		phase: value.phase,
+		platform:
+			value.platform === "win32" || value.platform === "linux" || value.platform === "darwin"
+				? value.platform
+				: undefined,
 		ompPath: typeof value.ompPath === "string" ? value.ompPath : undefined,
 		ompVersion: typeof value.ompVersion === "string" ? value.ompVersion : undefined,
 		gitVersion: typeof value.gitVersion === "string" ? value.gitVersion : undefined,
@@ -202,6 +206,7 @@ export function DiagnosticsScreen({
 	};
 
 	const missingOmp = current.phase === "omp-missing" || current.phase === "omp-incompatible";
+	const linux = current.platform === "linux";
 	const installState = current.install;
 	const installing = installState?.state === "installing";
 	const installBusy = busy === "install" || installing;
@@ -318,7 +323,7 @@ export function DiagnosticsScreen({
 						<p>{t("diag.incompatibleBody")}</p>
 					) : (
 						<>
-							<p>{t("diag.missingBody")}</p>
+							<p>{t(linux ? "diag.missingBodyLinux" : "diag.missingBody")}</p>
 							<button
 								type="button"
 								className="omp-button omp-button-primary"
@@ -327,8 +332,10 @@ export function DiagnosticsScreen({
 							>
 								{installBusy ? t("diag.installing") : t("diag.installOmpAction")}
 							</button>
-							<p className="omp-muted">{t("diag.missingManual")}</p>
-							<pre>{t("diag.missingInstall")}</pre>
+							<p className="omp-muted">
+								{t(linux ? "diag.missingManualLinux" : "diag.missingManual")}
+							</p>
+							<pre>{t(linux ? "diag.missingInstallLinux" : "diag.missingInstall")}</pre>
 							<p className="omp-muted">{t("diag.missingAlternative")}</p>
 							<p>{t("diag.missingSelect")}</p>
 						</>
@@ -360,7 +367,7 @@ export function DiagnosticsScreen({
 			<section className="omp-diagnostics-section omp-diagnostics-signing" aria-labelledby="omp-signing-title">
 				<h2 id="omp-signing-title">{t("diag.signingTitle")}</h2>
 				<p className="omp-message omp-message-warning" role="status">
-					<StatusIcon kind="warning" /> {t("diag.signingBody")}
+					<StatusIcon kind="warning" /> {t(linux ? "diag.signingBodyLinux" : "diag.signingBody")}
 				</p>
 			</section>
 		</section>

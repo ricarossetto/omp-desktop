@@ -172,6 +172,33 @@
 .omp-optional-tool__manual .omp-button {
 	margin-top: 4px;
 }
+.omp-optional-tool__manual.is-open {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px 10px;
+	border: 1px solid color-mix(in srgb, var(--omp-accent) 45%, var(--omp-border));
+	border-radius: var(--omp-radius-sm);
+	background: color-mix(in srgb, var(--omp-accent) 8%, transparent);
+}
+.omp-optional-tool__command {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.omp-optional-tool__command code {
+	flex: 1 1 220px;
+	min-width: 0;
+	padding: 4px 8px;
+	border: 1px solid var(--omp-border);
+	border-radius: var(--omp-radius-sm);
+	background: var(--omp-bg);
+	overflow-wrap: anywhere;
+}
+.omp-optional-tool__command .omp-button {
+	margin-top: 0;
+}
 
 .omp-optional-tool__actions {
 	display: flex;

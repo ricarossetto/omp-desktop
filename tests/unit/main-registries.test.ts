@@ -19,11 +19,21 @@ const attachment: AttachmentDto = {
 };
 
 describe("WorkspaceRegistry", () => {
-	test("resolve por id e caminho sem diferenciar caixa", () => {
+	test("resolve por id e caminho respeitando a plataforma", () => {
 		const registry = new WorkspaceRegistry();
-		registry.add(workspace);
+		const dto =
+			process.platform === "win32"
+				? workspace
+				: { ...workspace, path: "/projetos/Meu Projeto" };
+		registry.add(dto);
 		expect(registry.has("ws-1")).toBe(true);
-		expect(registry.findByPath("c:\\projetos\\meu projeto")?.workspaceId).toBe("ws-1");
+		if (process.platform === "win32") {
+			expect(registry.findByPath("c:\\projetos\\meu projeto")?.workspaceId).toBe("ws-1");
+		} else {
+			expect(registry.findByPath("/projetos/Meu Projeto")?.workspaceId).toBe("ws-1");
+			// No POSIX o caminho é sensível a maiúsculas; não autoriza outro.
+			expect(registry.findByPath("/projetos/meu projeto")).toBeUndefined();
+		}
 		registry.remove("ws-1");
 		expect(registry.has("ws-1")).toBe(false);
 	});
@@ -32,27 +42,35 @@ describe("WorkspaceRegistry", () => {
 describe("SessionRegistry", () => {
 	test("só autoriza abrir caminhos vindos da listagem", () => {
 		const registry = new SessionRegistry();
-		expect(registry.isPathAuthorized("ws-1", "C:\\sessoes\\a.jsonl")).toBe(false);
-		registry.authorizePath("ws-1", "C:\\sessoes\\a.jsonl");
-		expect(registry.isPathAuthorized("ws-1", "c:\\SESSOES\\A.JSONL")).toBe(true);
-		registry.registerSession({ workspaceId: "ws-1", sessionId: "s1", sessionPath: "C:\\sessoes\\a.jsonl" });
-		expect(registry.findByPath("c:\\sessoes\\a.jsonl")?.sessionId).toBe("s1");
+		const sessionPath = process.platform === "win32" ? "C:\\sessoes\\a.jsonl" : "/sessoes/a.jsonl";
+		expect(registry.isPathAuthorized("ws-1", sessionPath)).toBe(false);
+		registry.authorizePath("ws-1", sessionPath);
+		if (process.platform === "win32") {
+			expect(registry.isPathAuthorized("ws-1", "c:\\SESSOES\\A.JSONL")).toBe(true);
+		} else {
+			expect(registry.isPathAuthorized("ws-1", sessionPath)).toBe(true);
+			expect(registry.isPathAuthorized("ws-1", "/sessoes/A.jsonl")).toBe(false);
+		}
+		registry.registerSession({ workspaceId: "ws-1", sessionId: "s1", sessionPath });
+		const lookup = process.platform === "win32" ? "c:\\sessoes\\a.jsonl" : sessionPath;
+		expect(registry.findByPath(lookup)?.sessionId).toBe("s1");
 		expect(registry.has("s1", "ws-1")).toBe(true);
 		expect(registry.has("s1", "outro")).toBe(false);
 		registry.unregister("s1");
 		expect(registry.has("s1")).toBe(false);
 		registry.clearAll();
-		expect(registry.isPathAuthorized("ws-1", "C:\\sessoes\\a.jsonl")).toBe(false);
+		expect(registry.isPathAuthorized("ws-1", sessionPath)).toBe(false);
 	});
 
 	test("lista sessões abertas e limpa somente o workspace pedido", () => {
 		const registry = new SessionRegistry();
-		registry.registerSession({ workspaceId: "ws-1", sessionId: "s1", sessionPath: "C:\\a.jsonl" });
+		const sessionPath = process.platform === "win32" ? "C:\\a.jsonl" : "/sessoes/a.jsonl";
+		registry.registerSession({ workspaceId: "ws-1", sessionId: "s1", sessionPath });
 		registry.registerSession({ workspaceId: "ws-2", sessionId: "s2" });
 		expect(registry.list().map((record) => record.sessionId).sort()).toEqual(["s1", "s2"]);
 		registry.clearWorkspace("ws-1");
 		expect(registry.list()).toEqual([{ workspaceId: "ws-2", sessionId: "s2" }]);
-		expect(registry.isPathAuthorized("ws-1", "C:\\a.jsonl")).toBe(false);
+		expect(registry.isPathAuthorized("ws-1", sessionPath)).toBe(false);
 	});
 });
 

@@ -15,6 +15,7 @@ import { StatusIcon } from "../agents/StatusIcon";
 import { formatBytes } from "../agents/ui-utils";
 import { localizeError } from "../errors/error-messages";
 import { dependencyErrorKey } from "./dependency-errors";
+import { manualInstructions, runtimePlatform } from "./dependency-platform";
 import "./optional-tools.css";
 
 const PHASE_KEYS: Record<DependencyInstallPhase, MessageKey> = {
@@ -38,12 +39,6 @@ const KIND_PURPOSE: Record<DependencyKind, MessageKey> = {
 const KIND_ICON: Record<DependencyKind, "git" | "terminal"> = {
 	git: "git",
 	node: "terminal",
-};
-
-/** Páginas oficiais para o método manual; nunca são usadas para instalar. */
-const MANUAL_URL: Record<DependencyKind, string> = {
-	git: "https://git-scm.com/download/win",
-	node: "https://nodejs.org/en/download",
 };
 
 function isInstalling(
@@ -86,6 +81,8 @@ export function OptionalToolsSection({
 	const [checking, setChecking] = useState(false);
 	const [failure, setFailure] = useState<{ kind: DependencyKind; detail: string } | null>(null);
 	const [checkFailure, setCheckFailure] = useState<string | null>(null);
+	const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
+	const platform = runtimePlatform(runtime);
 
 	useEffect(() => {
 		setSnapshot(runtime?.dependencies);
@@ -128,9 +125,18 @@ export function OptionalToolsSection({
 
 	const openManual = async (kind: DependencyKind) => {
 		try {
-			await invoke({ op: "runtime.openExternal", url: MANUAL_URL[kind] });
+			await invoke({ op: "runtime.openExternal", url: manualInstructions(platform, kind).url });
 		} catch (error) {
 			setFailure({ kind, detail: localizeError(error, t) });
+		}
+	};
+
+	const copyCommand = async (command: string) => {
+		try {
+			await navigator.clipboard.writeText(command);
+			setCopiedCommand(command);
+		} catch {
+			setFailure({ kind: "git", detail: t("dep.copyFailed") });
 		}
 	};
 
@@ -211,20 +217,56 @@ export function OptionalToolsSection({
 		return null;
 	};
 
-	const renderManual = (kind: DependencyKind) => (
-		<details className="omp-optional-tool__manual">
-			<summary>{t("dep.manual")}</summary>
-			<p className="mono">{t(kind === "git" ? "dep.manualGit" : "dep.manualNode")}</p>
-			<button type="button" className="omp-button" onClick={() => void openManual(kind)}>
-				<Icon name="external" className="icon--sm" /> {t("dep.openOfficial")}
-			</button>
-		</details>
-	);
+	const renderManual = (kind: DependencyKind) => {
+		const instructions = manualInstructions(platform, kind);
+		if (kind === "git" && platform === "linux") {
+			return (
+				<div
+					className="omp-optional-tool__manual is-open"
+					data-testid="manual-git-linux"
+				>
+					<p>
+						<b>{t("dep.nativeGitTitle")}</b>
+					</p>
+					<p className="omp-muted">{t("dep.nativeGitBody")}</p>
+					{instructions.commands.map(({ distro, command }) => (
+						<div key={distro} className="omp-optional-tool__command">
+							<span className="omp-muted">
+								{t(distro === "debian" ? "dep.debianUbuntu" : "dep.archLinux")}
+							</span>
+							<code className="mono">{command}</code>
+							<button
+								type="button"
+								className="omp-button"
+								onClick={() => void copyCommand(command)}
+							>
+								<Icon name="copy" className="icon--sm" />{" "}
+								{copiedCommand === command ? t("dep.copied") : t("dep.copyCommand")}
+							</button>
+						</div>
+					))}
+					<button type="button" className="omp-button" onClick={() => void openManual(kind)}>
+						<Icon name="external" className="icon--sm" /> {t("dep.openOfficial")}
+					</button>
+				</div>
+			);
+		}
+		return (
+			<details className="omp-optional-tool__manual">
+				<summary>{t("dep.manual")}</summary>
+				<p className="mono">{t(kind === "git" ? "dep.manualGit" : "dep.manualNode")}</p>
+				<button type="button" className="omp-button" onClick={() => void openManual(kind)}>
+					<Icon name="external" className="icon--sm" /> {t("dep.openOfficial")}
+				</button>
+			</details>
+		);
+	};
 
 	const renderRow = (kind: DependencyKind) => {
 		const state = snapshot?.[kind];
 		const installing = isInstalling(state) || busy === kind;
 		const installed = isInstalled(state);
+		const manualOnly = kind === "git" && platform === "linux";
 		const showManual = !installed && !installing;
 		const rowFailure = failure?.kind === kind ? failure.detail : null;
 		return (
@@ -265,7 +307,7 @@ export function OptionalToolsSection({
 					{showManual ? renderManual(kind) : null}
 				</div>
 				<div className="omp-optional-tool__actions">
-					{!installed ? (
+					{!installed && !manualOnly ? (
 						<button
 							type="button"
 							className="omp-button omp-button-primary"

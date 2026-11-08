@@ -3,11 +3,22 @@
  * Git e shell. Sem import de Electron; o main injeta os caminhos do app.
  */
 import { execFile } from "node:child_process";
-import { access, constants } from "node:fs/promises";
+import { access, constants, stat } from "node:fs/promises";
 import * as path from "node:path";
 import type { RuntimeStatus } from "../shared/contracts";
 import type { DependencyRuntimeSnapshot } from "../shared/dependency-install-types";
 import { readJsonFile, writeJsonAtomic } from "./json-store";
+
+/**
+ * Plataforma exposta no contrato de status. O aplicativo é suportado em
+ * Windows, Linux e macOS; qualquer outro valor de `process.platform` cai em
+ * `win32` apenas para manter o contrato existente.
+ */
+export function desktopPlatform(): "win32" | "linux" | "darwin" {
+	if (process.platform === "linux") return "linux";
+	if (process.platform === "darwin") return "darwin";
+	return "win32";
+}
 
 export const OMP_BASELINE_VERSION = "18.16.0";
 /**
@@ -82,8 +93,15 @@ export function parseGitVersion(output: string): string | undefined {
 	return match?.[1];
 }
 
+const SCRIPT_FILE_RE = /\.(?:[cm]?[jt]s)$/i;
+
 async function executableExists(file: string): Promise<boolean> {
 	try {
+		const info = await stat(file);
+		if (!info.isFile()) return false;
+		// Scripts .js/.ts são executados pelo Bun (process.execPath), então não
+		// precisam do bit de execução; binários e .cmd/.bat precisam.
+		if (SCRIPT_FILE_RE.test(file)) return true;
 		await access(file, constants.X_OK);
 		return true;
 	} catch {
@@ -91,9 +109,21 @@ async function executableExists(file: string): Promise<boolean> {
 	}
 }
 
+/**
+ * Procura no PATH do processo. No POSIX a varredura é feita diretamente (sem
+ * depender de `which`), aceitando apenas arquivos com bit de execução; no
+ * Windows `where.exe` continua respeitando PATHEXT.
+ */
 async function findOnPath(name: string, env: NodeJS.ProcessEnv): Promise<string | undefined> {
-	const tool = process.platform === "win32" ? "where.exe" : "which";
-	const result = await execFileCaptured(tool, [name], { env, timeoutMs: 4000 });
+	if (process.platform !== "win32") {
+		const dirs = (env.PATH ?? "").split(path.delimiter).filter((dir) => dir.length > 0);
+		for (const dir of dirs) {
+			const candidate = path.resolve(dir, name);
+			if (await executableExists(candidate)) return candidate;
+		}
+		return undefined;
+	}
+	const result = await execFileCaptured("where.exe", [name], { env, timeoutMs: 4000 });
 	if (result.code !== 0) return undefined;
 	const first = result.stdout
 		.split(/\r?\n/)
@@ -157,7 +187,7 @@ export class RuntimeResolver {
 		await writeJsonAtomic(this.configFile, { ...current, ompPath });
 	}
 
-	/** Scripts de fixture rodam via Bun; .cmd/.bat via ComSpec. */
+	/** Scripts de fixture rodam via Bun; .cmd/.bat só existem no Windows. */
 	private async probeCommand(ompPath: string): Promise<{ file: string; args: string[] }> {
 		const extension = path.extname(ompPath).toLowerCase();
 		if (extension === ".js" || extension === ".mjs" || extension === ".cjs" || extension === ".ts") {
@@ -165,6 +195,11 @@ export class RuntimeResolver {
 			if (bun) return { file: bun, args: [ompPath, "--version"] };
 		}
 		if (extension === ".cmd" || extension === ".bat") {
+			// No POSIX esses arquivos não são executáveis; o binário oficial do
+			// OMP é um ELF sem extensão. Recusar cedo evita um spawn confuso.
+			if (process.platform !== "win32") {
+				throw new Error("Arquivos .cmd/.bat do Windows não executam no Linux. Selecione o binário `omp`.");
+			}
 			const comspec = this.env.ComSpec ?? "cmd.exe";
 			return { file: comspec, args: ["/d", "/s", "/c", `"${ompPath}" --version`] };
 		}
@@ -172,10 +207,22 @@ export class RuntimeResolver {
 	}
 
 	async probeOmpPath(ompPath: string, options: { signal?: AbortSignal } = {}): Promise<OmpProbeResult> {
+		if (process.platform !== "win32" && /\.(?:cmd|bat)$/i.test(ompPath)) {
+			return {
+				ompPath,
+				compatible: false,
+				message: "Arquivos .cmd/.bat do Windows não executam no Linux. Selecione o binário `omp`.",
+			};
+		}
 		if (!(await executableExists(ompPath))) {
 			return { compatible: false, message: "O executável do OMP não foi encontrado nesse caminho." };
 		}
-		const command = await this.probeCommand(ompPath);
+		let command: { file: string; args: string[] };
+		try {
+			command = await this.probeCommand(ompPath);
+		} catch (error) {
+			return { ompPath, compatible: false, message: (error as Error).message };
+		}
 		const result = await execFileCaptured(command.file, command.args, {
 			env: this.env,
 			timeoutMs: 10_000,
@@ -248,21 +295,24 @@ export class RuntimeResolver {
 	}
 
 	private async findOmpOnPath(): Promise<OmpProbeResult | undefined> {
-		const found = await findOnPath(process.platform === "win32" ? "omp.exe" : "omp", this.env);
-		if (!found) {
-			const alt = await findOnPath("omp", this.env);
-			if (!alt) return undefined;
-			const probe = await this.probeOmpPath(alt);
+		const names = process.platform === "win32" ? ["omp.exe", "omp"] : ["omp"];
+		for (const name of names) {
+			const found = await findOnPath(name, this.env);
+			if (!found) continue;
+			const probe = await this.probeOmpPath(found);
 			return { ...probe, source: "path" };
 		}
-		const probe = await this.probeOmpPath(found);
-		return { ...probe, source: "path" };
+		return undefined;
 	}
 
 	/** Em produção usa somente o Bun incluído no instalador. */
 	async resolveBun(): Promise<string | undefined> {
 		if (this.opts.isPackaged) {
-			const bundled = path.join(this.opts.resourcesPath, "bun", "bun.exe");
+			const bundled = path.join(
+				this.opts.resourcesPath,
+				"bun",
+				process.platform === "win32" ? "bun.exe" : "bun",
+			);
 			return (await executableExists(bundled)) ? bundled : undefined;
 		}
 		const configured = this.env.OMP_DESKTOP_BUN_PATH;
@@ -277,7 +327,28 @@ export class RuntimeResolver {
 		return path.join(this.opts.appPath, "out", "host", "index.js");
 	}
 
+	/**
+	 * Shell do terminal do usuário. No POSIX usa `$SHELL` somente quando é um
+	 * caminho absoluto executável; caso contrário cai em um shell POSIX real
+	 * presente no sistema. No Windows mantém PowerShell/ComSpec.
+	 */
 	async resolveShell(): Promise<string> {
+		if (process.platform !== "win32") {
+			const configured = this.env.SHELL?.trim();
+			const unusable = /^(?:false|nologin|sync|shutdown|halt)$/i;
+			if (
+				configured &&
+				path.isAbsolute(configured) &&
+				!unusable.test(path.basename(configured)) &&
+				(await executableExists(configured))
+			) {
+				return configured;
+			}
+			for (const candidate of ["/bin/bash", "/usr/bin/bash", "/bin/zsh", "/bin/sh"]) {
+				if (await executableExists(candidate)) return candidate;
+			}
+			return "/bin/sh";
+		}
 		const powershell = await findOnPath("powershell.exe", this.env);
 		if (powershell) return powershell;
 		const pwsh = await findOnPath("pwsh.exe", this.env);
@@ -321,6 +392,7 @@ export class RuntimeResolver {
 			status = {
 				phase: "host-failed",
 				signed: false,
+				platform: desktopPlatform(),
 				message: this.opts.isPackaged
 					? "O executável do Bun incluído no aplicativo não foi encontrado. Reinstale o OMP Desktop."
 					: "Bun não encontrado no PATH. Instale o Bun para executar o serviço local.",
@@ -334,6 +406,7 @@ export class RuntimeResolver {
 			status = {
 				phase: "omp-missing",
 				signed: false,
+				platform: desktopPlatform(),
 				message: omp.message ?? "OMP não encontrado. Instale o OMP ou selecione o executável em Diagnóstico.",
 				bunPath,
 				gitVersion,
@@ -344,6 +417,7 @@ export class RuntimeResolver {
 			status = {
 				phase: "omp-incompatible",
 				signed: false,
+				platform: desktopPlatform(),
 				message: omp.message ?? "A versão do OMP instalada não é compatível.",
 				ompPath: omp.ompPath,
 				ompVersion: omp.ompVersion,
@@ -356,6 +430,7 @@ export class RuntimeResolver {
 			status = {
 				phase: "starting-host",
 				signed: false,
+				platform: desktopPlatform(),
 				message: omp.message,
 				ompPath: omp.ompPath,
 				ompVersion: omp.ompVersion,

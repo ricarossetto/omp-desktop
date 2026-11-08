@@ -253,6 +253,12 @@ export type OmpInstallState =
 
 export interface RuntimeStatus {
 	phase: "starting-host" | "ready" | "omp-missing" | "omp-incompatible" | "host-failed";
+	/**
+	 * Plataforma do processo main. A UI usa este campo para escolher textos e
+	 * instruções nativas (por exemplo, Git via apt/pacman no Linux) sem
+	 * inferir o sistema pelo caminho do OMP.
+	 */
+	platform?: "win32" | "linux" | "darwin";
 	ompPath?: string;
 	ompVersion?: string;
 	gitVersion?: string;

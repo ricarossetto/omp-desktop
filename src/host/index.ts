@@ -5,6 +5,9 @@
  *   stdin  <- {kind:'request', id, op, payload}
  *   stdout -> {kind:'response', id, ok:true, data} | {kind:'response', id, ok:false, error}
  *           -> {kind:'event', workspaceId, sessionId?, generation, sequence, name, data}
+ *           -> {kind:'chunk', id, index, count, bytes, responseId?|event?, data}
+ *              (mensagens grandes; data é base64 de uma fatia UTF-8 e o cliente
+ *               remonta antes de decodificar o JSON original)
  *
  * Ops repassadas 1:1 do renderer (mesmo payload de `contracts.ts`):
  *   session.list/create/open/close/snapshot/rpc/uiResponse/subagentTranscript,
@@ -41,6 +44,7 @@ import {
 import { isRecord } from "../shared/session-state";
 import { readAccountUsage } from "./accounts";
 import { AttachmentStore } from "./attachments";
+import { JsonlWriter } from "./jsonl-writer";
 import { HostLogger } from "./log";
 import { readOmpVersion, resolveOmpPath, runOmp } from "./omp-cli";
 import { projectRuntimeStatus } from "./sanitize";
@@ -85,7 +89,26 @@ function defaultDataDir(): string {
 		return path.join(os.homedir(), "AppData", "Roaming", "omp-desktop");
 	}
 	const xdg = process.env.XDG_DATA_HOME;
-	return xdg ? path.join(xdg, "omp-desktop") : path.join(os.homedir(), ".local", "share", "omp-desktop");
+	// XDG_DATA_HOME só vale quando é absoluto; caso contrário o padrão da
+	// especificação é $HOME/.local/share.
+	if (xdg && path.isAbsolute(xdg)) return path.join(xdg, "omp-desktop");
+	return path.join(os.homedir(), ".local", "share", "omp-desktop");
+}
+
+/** Shell informado no status do host; precisa ser um caminho executável real. */
+function hostShell(): string {
+	if (process.platform === "win32") return process.env.ComSpec ?? "cmd.exe";
+	const configured = process.env.SHELL;
+	const unusable = /^(?:false|nologin|sync|shutdown|halt)$/i;
+	if (configured && path.isAbsolute(configured) && !unusable.test(path.basename(configured))) {
+		try {
+			fs.accessSync(configured, fs.constants.X_OK);
+			return configured;
+		} catch {
+			/* $SHELL inválido: cai no shell POSIX padrão */
+		}
+	}
+	return "/bin/sh";
 }
 
 class HostFailure extends Error {
@@ -95,38 +118,6 @@ class HostFailure extends Error {
 	) {
 		super(message);
 		this.name = "HostFailure";
-	}
-}
-
-class JsonlWriter {
-	private chain: Promise<void> = Promise.resolve();
-	private failed = false;
-
-	write(message: unknown): void {
-		if (this.failed) return;
-		let line: string;
-		try {
-			line = `${JSON.stringify(message)}\n`;
-		} catch (error) {
-			this.failed = true;
-			void this.chain;
-			process.stderr.write(`host: falha ao serializar mensagem: ${(error as Error).message}\n`);
-			return;
-		}
-		this.chain = this.chain.then(async () => {
-			if (this.failed) return;
-			try {
-				const result = Bun.stdout.write(line);
-				if (typeof result !== "number") await result;
-			} catch (error) {
-				this.failed = true;
-				process.stderr.write(`host: stdout fechado: ${(error as Error).message}\n`);
-			}
-		});
-	}
-
-	async flush(): Promise<void> {
-		await this.chain;
 	}
 }
 
@@ -213,7 +204,7 @@ async function main(): Promise<void> {
 		gitVersion = undefined;
 	}
 	status.gitVersion = gitVersion;
-	status.shell = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : process.env.SHELL;
+	status.shell = hostShell();
 	const profile = args.profile ?? process.env.OMP_DESKTOP_PROFILE ?? undefined;
 	const settings = new SettingsService(() => ({
 		ompPath: ompPath ?? resolveOmpPath(),

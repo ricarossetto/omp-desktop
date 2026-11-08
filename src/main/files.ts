@@ -160,16 +160,43 @@ const SAFE_EXTERNAL_OPEN_NAMES: Record<string, true> = {
 	".editorconfig": true,
 };
 
+/** Extensões que um desktop POSIX pode executar por associação. */
+const POSIX_SCRIPT_EXTENSIONS: Record<string, true> = {
+	".sh": true,
+	".bash": true,
+	".zsh": true,
+	".fish": true,
+	".command": true,
+	".run": true,
+};
+
 /**
  * Decide se o arquivo pode ser entregue ao aplicativo padrão (`open`) ou se
- * deve apenas ser mostrado no Explorer (`reveal`). Função pura e testável.
+ * deve apenas ser mostrado no gerenciador de arquivos (`reveal`). Função pura
+ * e testável.
+ *
+ * No POSIX, scripts de shell e qualquer arquivo com bit de execução nunca vão
+ * para `xdg-open`: alguns ambientes executam o arquivo em vez de abri-lo no
+ * editor. O chamador confirma o bit de execução com `isExecutableFile`.
  */
 export function externalOpenMode(filePath: string): "open" | "reveal" {
 	const extension = path.extname(filePath).toLowerCase();
 	if (extension.length > 0) {
+		if (process.platform !== "win32" && POSIX_SCRIPT_EXTENSIONS[extension] === true) return "reveal";
 		return SAFE_EXTERNAL_OPEN_EXTENSIONS[extension] === true ? "open" : "reveal";
 	}
 	return SAFE_EXTERNAL_OPEN_NAMES[path.basename(filePath).toLowerCase()] === true ? "open" : "reveal";
+}
+
+/** `true` quando o arquivo tem bit de execução (POSIX); sempre `false` no Windows. */
+export async function isExecutableFile(filePath: string): Promise<boolean> {
+	if (process.platform === "win32") return false;
+	try {
+		const info = await stat(filePath);
+		return (info.mode & 0o111) !== 0;
+	} catch {
+		return false;
+	}
 }
 
 /**

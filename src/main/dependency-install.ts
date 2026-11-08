@@ -1,20 +1,31 @@
 /**
- * Instalação das dependências opcionais Git e Node.js no Windows.
+ * Instalação das dependências opcionais Git e Node.js.
  *
  * Fontes oficiais (nada vem do renderer):
- * - Git: MinGit, a distribuição ZIP oficial do Git for Windows documentada
- *   para embutir em aplicativos (https://gitforwindows.org/mingit.html).
- *   Versão e SHA-256 fixados a partir das notas oficiais do release.
- * - Node.js LTS: ZIP oficial de nodejs.org. A versão LTS é resolvida no
- *   momento da instalação pelo `index.json` oficial e o SHA-256 é lido do
- *   `SHASUMS256.txt` oficial da mesma versão, antes do download.
+ * - Windows/Git: MinGit, a distribuição ZIP oficial do Git for Windows
+ *   documentada para embutir em aplicativos
+ *   (https://gitforwindows.org/mingit.html). Versão e SHA-256 fixados a
+ *   partir das notas oficiais do release.
+ * - Linux/Git: o Git é nativo. O aplicativo nunca baixa MinGit nem executa
+ *   sudo/apt/pacman; a UI mostra o comando fixo da distribuição e oferece
+ *   nova sondagem depois que o usuário instalar.
+ * - Node.js LTS: ZIP oficial de nodejs.org no Windows e TAR.GZ oficial
+ *   `linux-x64` no Linux. A versão LTS é resolvida no momento da instalação
+ *   pelo `index.json` oficial e o SHA-256 é lido do `SHASUMS256.txt` oficial
+ *   da mesma versão, antes do download.
  *
  * Garantias:
  * - nada de winget/MSI/instalador executável, nenhum privilégio de admin;
- * - destino por usuário em `%LOCALAPPDATA%\omp-desktop\tools\{git,node}`;
+ * - destino por usuário em `%LOCALAPPDATA%\omp-desktop\tools\{git,node}` no
+ *   Windows e em `$XDG_DATA_HOME/omp-desktop/tools/node` (ou
+ *   `$HOME/.local/share/...`) no Linux;
  * - download em streaming com limite, SHA-256 conferido antes de extrair;
  * - extração ZIP própria com proteção contra zip-slip, symlink, ADS, nomes
  *   reservados do Windows e bombas de descompressão;
+ * - extração TAR.GZ própria no Linux: aceita somente symlinks relativos que
+ *   permaneçam dentro da extração (os links oficiais `bin/npm` e `bin/npx`
+ *   do Node precisam funcionar), rejeita hardlinks/symlinks que escapem,
+ *   caminhos absolutos, `..`, tipos desconhecidos e bombas;
  * - promoção atômica por `rename`, nunca sobrescreve instalação existente;
  * - `--version` do executável extraído é conferido antes e depois da ativação;
  * - nenhum registro/PATH persistente do usuário é alterado. O chamador
@@ -26,16 +37,20 @@ import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, rmSync } from "node:fs";
 import {
 	access,
+	chmod,
+	link,
+	lstat,
 	mkdir,
 	open,
 	rename,
 	rm,
+	symlink,
 	type FileHandle,
 } from "node:fs/promises";
 import * as path from "node:path";
 import { PassThrough, Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { createInflateRaw } from "node:zlib";
+import { createGunzip, createInflateRaw } from "node:zlib";
 import type {
 	DependencyErrorCode,
 	DependencyInstallOptions,
@@ -135,6 +150,8 @@ export interface DependencyArtifact {
 	maxDownloadBytes: number;
 	/** ZIP do Node tem uma pasta raiz (`node-vX-win-x64/`) que é removida. */
 	stripTopLevelDir: boolean;
+	/** Formato do arquivo baixado; padrão `zip` (Windows). */
+	archiveFormat?: "zip" | "tar.gz";
 	executablePath: string;
 	requiredPaths: string[];
 }
@@ -155,8 +172,43 @@ interface Deadline {
 // Caminhos gerenciados e PATH do processo
 // ---------------------------------------------------------------------------
 
-/** Raiz gerenciada por usuário: `%LOCALAPPDATA%\omp-desktop\tools`. */
-export function resolveDependencyToolsRoot(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * Raiz gerenciada por usuário:
+ * - Windows: `%LOCALAPPDATA%\omp-desktop\tools`;
+ * - Linux: `$XDG_DATA_HOME/omp-desktop/tools` (somente XDG absoluto) ou
+ *   `$HOME/.local/share/omp-desktop/tools`.
+ */
+export function resolveDependencyToolsRoot(
+	env: NodeJS.ProcessEnv = process.env,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	if (platform === "linux") {
+		const xdgDataHome = env.XDG_DATA_HOME?.trim();
+		if (xdgDataHome && path.isAbsolute(xdgDataHome)) {
+			return path.join(
+				path.resolve(xdgDataHome),
+				DEPENDENCY_TOOLS_DIR_NAME,
+				DEPENDENCY_TOOLS_SUBDIR,
+			);
+		}
+		const home = env.HOME?.trim();
+		if (home) {
+			return path.join(
+				path.resolve(home),
+				".local",
+				"share",
+				DEPENDENCY_TOOLS_DIR_NAME,
+				DEPENDENCY_TOOLS_SUBDIR,
+			);
+		}
+		throw new DependencyInstallError(
+			"UNSUPPORTED_PLATFORM",
+			"HOME/XDG_DATA_HOME missing; cannot resolve per-user tools directory",
+		);
+	}
+	if (platform !== "win32") {
+		throw new DependencyInstallError("UNSUPPORTED_PLATFORM", `platform=${platform}`);
+	}
 	const localAppData = env.LOCALAPPDATA?.trim();
 	if (localAppData) {
 		return path.join(path.resolve(localAppData), DEPENDENCY_TOOLS_DIR_NAME, DEPENDENCY_TOOLS_SUBDIR);
@@ -179,32 +231,56 @@ export function resolveDependencyToolsRoot(env: NodeJS.ProcessEnv = process.env)
 
 /**
  * Diretórios a prepender no PATH do processo antes de criar host/terminais.
- * Devolve os caminhos mesmo quando ainda não existem (preseed). Git usa
- * `git/cmd` (wrapper oficial que encontra o restante da distribuição) e Node
- * usa a própria raiz, onde ficam `node.exe`, `npm.cmd` e `npx.cmd`.
+ * Devolve os caminhos mesmo quando ainda não existem (preseed).
+ * - Windows: `git/cmd` (wrapper oficial do MinGit) e a raiz do Node, onde
+ *   ficam `node.exe`, `npm.cmd` e `npx.cmd`.
+ * - Linux: somente `<tools>/node/bin`; o Git é nativo e nunca é gerenciado
+ *   pelo aplicativo.
  */
-export function optionalDependencyBinDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+export function optionalDependencyBinDirs(
+	env: NodeJS.ProcessEnv = process.env,
+	platform: NodeJS.Platform = process.platform,
+): string[] {
 	let root: string;
 	try {
-		root = resolveDependencyToolsRoot(env);
+		root = resolveDependencyToolsRoot(env, platform);
 	} catch {
 		return [];
 	}
+	if (platform === "linux") return [path.join(root, "node", "bin")];
 	return [path.join(root, "git", "cmd"), path.join(root, "node")];
 }
 
-function executableName(kind: DependencyKind): string {
-	return kind === "git" ? "git.exe" : "node.exe";
+function executableName(kind: DependencyKind, platform: NodeJS.Platform): string {
+	if (platform === "win32") return kind === "git" ? "git.exe" : "node.exe";
+	return kind === "git" ? "git" : "node";
 }
 
-function managedExecutablePath(root: string, kind: DependencyKind): string {
+function managedExecutablePath(
+	root: string,
+	kind: DependencyKind,
+	platform: NodeJS.Platform,
+): string {
+	if (platform === "linux") {
+		return kind === "git"
+			? path.join(root, "git", "bin", "git")
+			: path.join(root, "node", "bin", "node");
+	}
 	return kind === "git"
 		? path.join(root, "git", "cmd", "git.exe")
 		: path.join(root, "node", "node.exe");
 }
 
-function managedNpmPaths(root: string): string[] {
+function managedNpmPaths(root: string, platform: NodeJS.Platform): string[] {
 	const nodeRoot = path.join(root, "node");
+	if (platform === "linux") {
+		return [
+			path.join(nodeRoot, "bin", "npm"),
+			path.join(nodeRoot, "bin", "npx"),
+			path.join(nodeRoot, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+			path.join(nodeRoot, "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+		];
+	}
 	return [path.join(nodeRoot, "npm.cmd"), path.join(nodeRoot, "node_modules", "npm", "bin", "npm-cli.js")];
 }
 
@@ -351,13 +427,28 @@ function defaultProbeRunner(
 			windowsHide: true,
 			encoding: "utf8",
 		},
-		(error, stdout) => {
+		(error, stdout, stderr) => {
 			context.signal.removeEventListener("abort", onAbort);
 			if (context.signal.aborted) {
 				reject(new DependencyInstallError("ABORTED", "aborted"));
 				return;
 			}
 			if (error) {
+				// O Node Linux oficial exige libatomic.so.1; em Debian 12 mínimo
+				// o binário não inicia e o erro precisa ser acionável na UI.
+				const detail = `${stderr ?? ""}\n${error.message}`;
+				const library = detail.match(
+					/(?:error while loading shared libraries|Library not loaded):\s*([^\s:]+)/i,
+				)?.[1];
+				if (library) {
+					reject(
+						new DependencyInstallError(
+							"MISSING_SYSTEM_LIBRARY",
+							`missing-system-library=${library}`,
+						),
+					);
+					return;
+				}
 				resolve(undefined);
 				return;
 			}
@@ -832,6 +923,573 @@ async function extractZipArchive(
 }
 
 // ---------------------------------------------------------------------------
+// Leitura e extração segura de TAR.GZ (Node.js Linux)
+// ---------------------------------------------------------------------------
+
+const TAR_BLOCK_SIZE = 512;
+const MAX_TAR_METADATA_BYTES = 1024 * 1024;
+
+interface TarHeader {
+	name: string;
+	mode: number;
+	size: number;
+	type: string;
+	linkName: string;
+}
+
+interface TarPaxOverrides {
+	path?: string;
+	linkpath?: string;
+	size?: number;
+}
+
+function parseTarString(block: Buffer, offset: number, length: number): string {
+	const end = block.indexOf(0, offset);
+	const sliceEnd = end >= 0 && end < offset + length ? end : offset + length;
+	return block.toString("utf8", offset, sliceEnd);
+}
+
+function parseTarNumber(block: Buffer, offset: number, length: number): number {
+	const first = block[offset];
+	if (first !== undefined && (first & 0x80) !== 0) {
+		// GNU base-256 para tamanhos grandes.
+		let value = BigInt(first & 0x7f);
+		for (let index = 1; index < length; index += 1) {
+			value = value * 256n + BigInt(block[offset + index] ?? 0);
+		}
+		return Number(value);
+	}
+	const text = block.toString("ascii", offset, offset + length).replace(/\0.*$/, "").trim();
+	if (text.length === 0) return 0;
+	if (!/^[0-7]+$/.test(text)) {
+		throw new DependencyInstallError("ARCHIVE_INVALID", "invalid-tar-number");
+	}
+	return Number.parseInt(text, 8);
+}
+
+function tarChecksum(block: Buffer, signed: boolean): number {
+	let sum = 0;
+	for (let index = 0; index < TAR_BLOCK_SIZE; index += 1) {
+		const byte = index >= 148 && index < 156 ? 0x20 : (block[index] ?? 0);
+		sum += signed && byte > 127 ? byte - 256 : byte;
+	}
+	return sum;
+}
+
+function parseTarHeader(block: Buffer): TarHeader {
+	const stored = parseTarNumber(block, 148, 8);
+	if (stored !== tarChecksum(block, false) && stored !== tarChecksum(block, true)) {
+		throw new DependencyInstallError("ARCHIVE_INVALID", "tar-checksum-mismatch");
+	}
+	const magic = block.toString("ascii", 257, 263);
+	const prefix = magic.startsWith("ustar") ? parseTarString(block, 345, 155) : "";
+	const rawName = parseTarString(block, 0, 100);
+	const name = prefix ? `${prefix}/${rawName}` : rawName;
+	const type = String.fromCharCode(block[156] ?? 0x30) || "0";
+	return {
+		name,
+		mode: parseTarNumber(block, 100, 8),
+		size: parseTarNumber(block, 124, 12),
+		type,
+		linkName: parseTarString(block, 157, 100),
+	};
+}
+
+function parseTarPax(data: Buffer): TarPaxOverrides {
+	const overrides: TarPaxOverrides = {};
+	let offset = 0;
+	while (offset < data.length) {
+		if (data[offset] === 0) break;
+		const space = data.indexOf(0x20, offset);
+		if (space < 0) {
+			throw new DependencyInstallError("ARCHIVE_INVALID", "invalid-pax-record");
+		}
+		const length = Number.parseInt(data.toString("ascii", offset, space), 10);
+		if (!Number.isFinite(length) || length <= 0 || offset + length > data.length) {
+			throw new DependencyInstallError("ARCHIVE_INVALID", "invalid-pax-length");
+		}
+		const record = data.toString("utf8", space + 1, offset + length - 1);
+		const equals = record.indexOf("=");
+		if (equals > 0) {
+			const key = record.slice(0, equals);
+			const value = record.slice(equals + 1);
+			if (key === "path") overrides.path = value;
+			else if (key === "linkpath") overrides.linkpath = value;
+			else if (key === "size") {
+				const parsed = Number.parseInt(value, 10);
+				if (!Number.isFinite(parsed) || parsed < 0) {
+					throw new DependencyInstallError("ARCHIVE_INVALID", "invalid-pax-size");
+				}
+				overrides.size = parsed;
+			}
+		}
+		offset += length;
+	}
+	return overrides;
+}
+
+function isZeroTarBlock(block: Buffer): boolean {
+	for (const byte of block) if (byte !== 0) return false;
+	return true;
+}
+
+function tarPadding(size: number): number {
+	return (TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
+}
+
+/** Caminho POSIX seguro: relativo, sem `..`, sem absoluto e dentro da raiz. */
+function safePosixExtractPath(
+	root: string,
+	rawName: string,
+): { absolute: string; isDirectory: boolean } {
+	if (rawName.length === 0 || rawName.length > 4096 || rawName.includes("\0")) {
+		throw new DependencyInstallError("PATH_ESCAPE", "empty-or-nul-entry");
+	}
+	const name = rawName.replace(/\\/g, "/");
+	if (name.startsWith("/") || /^[A-Za-z]:/.test(name)) {
+		throw new DependencyInstallError("PATH_ESCAPE", `absolute-entry name=${rawName}`);
+	}
+	const isDirectory = name.endsWith("/");
+	const trimmed = isDirectory ? name.slice(0, -1) : name;
+	const segments = trimmed.split("/");
+	for (const segment of segments) {
+		if (segment.length === 0 || segment === "." || segment === "..") {
+			throw new DependencyInstallError("PATH_ESCAPE", `invalid-segment name=${rawName}`);
+		}
+	}
+	const rootResolved = path.resolve(root);
+	const absolute = path.resolve(rootResolved, ...segments);
+	if (absolute === rootResolved || !absolute.startsWith(rootResolved + path.sep)) {
+		throw new DependencyInstallError("PATH_ESCAPE", `outside-root name=${rawName}`);
+	}
+	return { absolute, isDirectory };
+}
+
+/** Nenhuma entrada pode ser gravada atravessando um symlink criado antes. */
+function assertNoSymlinkAncestor(
+	root: string,
+	absolute: string,
+	symlinks: ReadonlyMap<string, string>,
+): void {
+	let current = path.dirname(absolute);
+	while (current !== root && current.startsWith(root + path.sep)) {
+		if (symlinks.has(current)) {
+			throw new DependencyInstallError("PATH_ESCAPE", `symlink-ancestor path=${current}`);
+		}
+		const parent = path.dirname(current);
+		if (parent === current) break;
+		current = parent;
+	}
+}
+
+/**
+ * Resolve um alvo de symlink como o kernel faria, componente por componente,
+ * seguindo os symlinks já extraídos. Não normaliza `x/..` antes de resolver
+ * `x`: a validação textual sozinha deixaria `y -> x/../../..` parecer dentro
+ * da raiz quando `x` aponta para outro lugar. Qualquer `..` que ultrapasse a
+ * raiz, alvo absoluto ou ciclo é recusado.
+ */
+function resolveLinkTarget(
+	root: string,
+	baseDir: string,
+	linkName: string,
+	symlinks: ReadonlyMap<string, string>,
+	hops = 0,
+): string {
+	const rootResolved = path.resolve(root);
+	if (hops > 40) {
+		throw new DependencyInstallError("PATH_ESCAPE", "symlink-loop");
+	}
+	let current = path.resolve(baseDir);
+	if (current !== rootResolved && !current.startsWith(rootResolved + path.sep)) {
+		throw new DependencyInstallError("PATH_ESCAPE", `outside-root base=${baseDir}`);
+	}
+	for (const segment of linkName.replace(/\\/g, "/").split("/")) {
+		if (segment.length === 0 || segment === ".") continue;
+		if (segment === "..") {
+			if (current === rootResolved) {
+				throw new DependencyInstallError("PATH_ESCAPE", `outside-root target=${linkName}`);
+			}
+			current = path.dirname(current);
+			continue;
+		}
+		const candidate = path.join(current, segment);
+		const nested = symlinks.get(candidate);
+		if (nested !== undefined) {
+			current = resolveLinkTarget(
+				rootResolved,
+				path.dirname(candidate),
+				nested,
+				symlinks,
+				hops + 1,
+			);
+		} else {
+			current = candidate;
+		}
+	}
+	if (current !== rootResolved && !current.startsWith(rootResolved + path.sep)) {
+		throw new DependencyInstallError("PATH_ESCAPE", `outside-root target=${linkName}`);
+	}
+	return current;
+}
+
+/** Symlink do TAR: alvo relativo que, resolvido de verdade, fica na extração. */
+function safeSymlinkTarget(
+	root: string,
+	linkPath: string,
+	linkName: string,
+	symlinks: ReadonlyMap<string, string>,
+): string {
+	if (linkName.length === 0 || linkName.includes("\0")) {
+		throw new DependencyInstallError("PATH_ESCAPE", "empty-symlink-target");
+	}
+	if (path.isAbsolute(linkName) || /^[A-Za-z]:/.test(linkName)) {
+		throw new DependencyInstallError("PATH_ESCAPE", `absolute-symlink-target=${linkName}`);
+	}
+	const resolved = resolveLinkTarget(root, path.dirname(linkPath), linkName, symlinks);
+	if (resolved === linkPath) {
+		throw new DependencyInstallError("PATH_ESCAPE", `self-symlink target=${linkName}`);
+	}
+	if (resolved === path.resolve(root)) {
+		throw new DependencyInstallError("PATH_ESCAPE", `symlink-to-root target=${linkName}`);
+	}
+	return resolved;
+}
+
+/**
+ * Revalida todos os symlinks depois da extração. Um link criado cedo pode
+ * passar a atravessar outro symlink criado depois; o kernel resolveria os dois
+ * na hora do uso, então a checagem precisa acontecer com o mapa completo.
+ */
+function validateExtractedSymlinks(
+	root: string,
+	symlinks: ReadonlyMap<string, string>,
+): void {
+	for (const [linkPath, linkName] of symlinks) {
+		const resolved = resolveLinkTarget(root, path.dirname(linkPath), linkName, symlinks);
+		if (resolved === linkPath) {
+			throw new DependencyInstallError("PATH_ESCAPE", `self-symlink path=${linkPath}`);
+		}
+		if (resolved === path.resolve(root)) {
+			throw new DependencyInstallError("PATH_ESCAPE", `symlink-to-root path=${linkPath}`);
+		}
+	}
+}
+
+function tarExtractError(error: unknown, name: string): DependencyInstallError {
+	if (error instanceof DependencyInstallError) return error;
+	const code = errorCodeOf(error);
+	if (code === "EEXIST" || code === "ENOTDIR" || code === "EISDIR") {
+		return new DependencyInstallError("ARCHIVE_INVALID", `conflicting-entry name=${name} code=${code}`);
+	}
+	return new DependencyInstallError("WRITE", `extract-failed name=${name} code=${code ?? "unknown"}`);
+}
+
+/** Leitor sequencial sobre o stream descomprimido, sem carregar o TAR inteiro. */
+class TarByteReader {
+	private readonly iterator: AsyncIterator<Buffer | Uint8Array>;
+	private chunk: Buffer = Buffer.alloc(0);
+	private offset = 0;
+
+	constructor(stream: Readable) {
+		this.iterator = stream[Symbol.asyncIterator]() as AsyncIterator<Buffer | Uint8Array>;
+	}
+
+	private async ensure(): Promise<boolean> {
+		while (this.offset >= this.chunk.length) {
+			const next = await this.iterator.next();
+			if (next.done) return false;
+			const value = next.value;
+			this.chunk = Buffer.isBuffer(value)
+				? value
+				: Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+			this.offset = 0;
+		}
+		return true;
+	}
+
+	async readExactly(length: number): Promise<Buffer> {
+		const output = Buffer.alloc(length);
+		let written = 0;
+		while (written < length) {
+			if (!(await this.ensure())) {
+				throw new DependencyInstallError("ARCHIVE_INVALID", "unexpected-eof");
+			}
+			const take = Math.min(length - written, this.chunk.length - this.offset);
+			this.chunk.copy(output, written, this.offset, this.offset + take);
+			this.offset += take;
+			written += take;
+		}
+		return output;
+	}
+
+	async copyExactly(
+		length: number,
+		onChunk: (chunk: Buffer) => Promise<void> | void,
+	): Promise<void> {
+		let remaining = length;
+		while (remaining > 0) {
+			if (!(await this.ensure())) {
+				throw new DependencyInstallError("ARCHIVE_INVALID", "unexpected-eof");
+			}
+			const take = Math.min(remaining, this.chunk.length - this.offset);
+			await onChunk(this.chunk.subarray(this.offset, this.offset + take));
+			this.offset += take;
+			remaining -= take;
+		}
+	}
+
+	async skip(length: number): Promise<void> {
+		let remaining = length;
+		while (remaining > 0) {
+			if (!(await this.ensure())) {
+				throw new DependencyInstallError("ARCHIVE_INVALID", "unexpected-eof");
+			}
+			const take = Math.min(remaining, this.chunk.length - this.offset);
+			this.offset += take;
+			remaining -= take;
+		}
+	}
+
+	async close(): Promise<void> {
+		await this.iterator.return?.();
+	}
+}
+
+async function extractTarGzArchive(
+	archivePath: string,
+	destination: string,
+	options: { stripTopLevelDir: boolean; signal?: AbortSignal },
+): Promise<void> {
+	const source = createReadStream(archivePath);
+	const gunzip = createGunzip();
+	source.on("error", (error) => gunzip.destroy(error));
+	source.pipe(gunzip);
+	const reader = new TarByteReader(gunzip);
+	const root = path.resolve(destination);
+	const symlinks = new Map<string, string>();
+	let stripPrefix: string | undefined;
+	let entries = 0;
+	let totalBytes = 0;
+	let pendingName: string | undefined;
+	let pendingLink: string | undefined;
+	let pendingPax: TarPaxOverrides | undefined;
+
+	try {
+		for (;;) {
+			if (options.signal?.aborted) {
+				throw new DependencyInstallError("ABORTED", "aborted");
+			}
+			const headerBlock = await reader.readExactly(TAR_BLOCK_SIZE);
+			if (isZeroTarBlock(headerBlock)) break;
+			const header = parseTarHeader(headerBlock);
+			entries += 1;
+			if (entries > MAX_ENTRIES) {
+				throw new DependencyInstallError("SIZE_LIMIT", `too-many-entries=${entries}`);
+			}
+			const type = header.type;
+			if (type === "L" || type === "K" || type === "x" || type === "g") {
+				if (header.size > MAX_TAR_METADATA_BYTES) {
+					throw new DependencyInstallError("SIZE_LIMIT", `metadata-too-large=${header.size}`);
+				}
+				const data = await reader.readExactly(header.size);
+				await reader.skip(tarPadding(header.size));
+				if (type === "L") pendingName = data.toString("utf8").replace(/\0.*$/, "");
+				else if (type === "K") pendingLink = data.toString("utf8").replace(/\0.*$/, "");
+				else if (type === "x") pendingPax = parseTarPax(data);
+				else parseTarPax(data);
+				continue;
+			}
+
+			let name = pendingName ?? header.name;
+			let linkName = pendingLink ?? header.linkName;
+			let size = header.size;
+			if (pendingPax) {
+				if (pendingPax.path !== undefined) name = pendingPax.path;
+				if (pendingPax.linkpath !== undefined) linkName = pendingPax.linkpath;
+				if (pendingPax.size !== undefined) size = pendingPax.size;
+			}
+			pendingName = undefined;
+			pendingLink = undefined;
+			pendingPax = undefined;
+
+			if (name.startsWith("/") || /^[A-Za-z]:/.test(name) || name.includes("\0")) {
+				throw new DependencyInstallError("PATH_ESCAPE", `absolute-entry name=${name}`);
+			}
+
+			if (options.stripTopLevelDir) {
+				if (stripPrefix === undefined) {
+					const normalized = name.replace(/\\/g, "/");
+					const slash = normalized.indexOf("/");
+					if (slash <= 0) {
+						throw new DependencyInstallError(
+							"ARCHIVE_INVALID",
+							`missing-top-level-dir name=${name}`,
+						);
+					}
+					stripPrefix = `${normalized.slice(0, slash)}/`;
+				}
+				if (name === stripPrefix.slice(0, -1)) {
+					await reader.skip(size + tarPadding(size));
+					continue;
+				}
+				if (!name.startsWith(stripPrefix)) {
+					throw new DependencyInstallError("ARCHIVE_INVALID", `unexpected-entry name=${name}`);
+				}
+				name = name.slice(stripPrefix.length);
+				if (name.length === 0) {
+					await reader.skip(size + tarPadding(size));
+					continue;
+				}
+			}
+
+			if (type === "5") {
+				if (size !== 0) {
+					throw new DependencyInstallError("ARCHIVE_INVALID", `directory-with-data name=${name}`);
+				}
+				const target = safePosixExtractPath(root, name);
+				assertNoSymlinkAncestor(root, target.absolute, symlinks);
+				const existing = await lstat(target.absolute).catch(() => undefined);
+				if (existing?.isSymbolicLink()) {
+					// mkdir/chmod seguiriam o link e alterariam o alvo fora da raiz.
+					throw new DependencyInstallError(
+						"PATH_ESCAPE",
+						`directory-over-symlink name=${name}`,
+					);
+				}
+				if (existing && !existing.isDirectory()) {
+					throw new DependencyInstallError(
+						"ARCHIVE_INVALID",
+						`directory-conflict name=${name}`,
+					);
+				}
+				try {
+					await mkdir(target.absolute, { recursive: true });
+					await chmod(target.absolute, (header.mode & 0o777) || 0o755);
+				} catch (error) {
+					throw tarExtractError(error, name);
+				}
+				await reader.skip(tarPadding(size));
+				continue;
+			}
+
+			if (type === "2") {
+				if (size !== 0) {
+					throw new DependencyInstallError("ARCHIVE_INVALID", `symlink-with-data name=${name}`);
+				}
+				const target = safePosixExtractPath(root, name);
+				assertNoSymlinkAncestor(root, target.absolute, symlinks);
+				safeSymlinkTarget(root, target.absolute, linkName, symlinks);
+				try {
+					await mkdir(path.dirname(target.absolute), { recursive: true });
+					await symlink(linkName, target.absolute);
+				} catch (error) {
+					throw tarExtractError(error, name);
+				}
+				symlinks.set(target.absolute, linkName);
+				await reader.skip(tarPadding(size));
+				continue;
+			}
+
+			if (type === "1") {
+				if (size !== 0) {
+					throw new DependencyInstallError("ARCHIVE_INVALID", `hardlink-with-data name=${name}`);
+				}
+				const target = safePosixExtractPath(root, name);
+				assertNoSymlinkAncestor(root, target.absolute, symlinks);
+				let hardlinkName = linkName;
+				if (stripPrefix) {
+					if (!hardlinkName.startsWith(stripPrefix)) {
+						throw new DependencyInstallError(
+							"ARCHIVE_INVALID",
+							`unexpected-hardlink name=${hardlinkName}`,
+						);
+					}
+					hardlinkName = hardlinkName.slice(stripPrefix.length);
+				}
+				const hardlinkTarget = safePosixExtractPath(root, hardlinkName);
+				if (hardlinkTarget.absolute === target.absolute) {
+					throw new DependencyInstallError("PATH_ESCAPE", `self-hardlink name=${name}`);
+				}
+				// lstat/link seguem symlinks intermediários; nenhum ancestral do
+				// alvo pode ser um link criado pela extração.
+				assertNoSymlinkAncestor(root, hardlinkTarget.absolute, symlinks);
+				const info = await lstat(hardlinkTarget.absolute).catch(() => undefined);
+				if (!info || !info.isFile() || info.isSymbolicLink()) {
+					throw new DependencyInstallError(
+						"ARCHIVE_INVALID",
+						`hardlink-target-missing name=${name}`,
+					);
+				}
+				try {
+					await mkdir(path.dirname(target.absolute), { recursive: true });
+					await link(hardlinkTarget.absolute, target.absolute);
+				} catch (error) {
+					throw tarExtractError(error, name);
+				}
+				await reader.skip(tarPadding(size));
+				continue;
+			}
+
+			if (type !== "0" && type !== "\0" && type !== "7") {
+				throw new DependencyInstallError(
+					"ARCHIVE_INVALID",
+					`unsupported-entry-type=${type} name=${name}`,
+				);
+			}
+
+			if (size > MAX_ENTRY_BYTES) {
+				throw new DependencyInstallError(
+					"SIZE_LIMIT",
+					`entry-too-large name=${name} size=${size}`,
+				);
+			}
+			totalBytes += size;
+			if (totalBytes > MAX_TOTAL_BYTES) {
+				throw new DependencyInstallError("SIZE_LIMIT", `archive-too-large total=${totalBytes}`);
+			}
+			const target = safePosixExtractPath(root, name);
+			assertNoSymlinkAncestor(root, target.absolute, symlinks);
+			const mode = (header.mode & 0o777) || 0o644;
+			let handle: FileHandle | undefined;
+			try {
+				await mkdir(path.dirname(target.absolute), { recursive: true });
+				handle = await open(target.absolute, "wx", mode);
+				const output = handle;
+				await reader.copyExactly(size, async (chunk) => {
+					if (options.signal?.aborted) {
+						throw new DependencyInstallError("ABORTED", "aborted");
+					}
+					await writeAll(output, chunk, target.absolute);
+				});
+				await handle.close();
+				handle = undefined;
+				await chmod(target.absolute, mode);
+			} catch (error) {
+				await handle?.close().catch(() => undefined);
+				throw tarExtractError(error, name);
+			}
+			await reader.skip(tarPadding(size));
+		}
+		validateExtractedSymlinks(root, symlinks);
+	} catch (error) {
+		if (error instanceof DependencyInstallError) throw error;
+		if (options.signal?.aborted) {
+			throw new DependencyInstallError("ABORTED", "aborted");
+		}
+		const code = errorCodeOf(error);
+		throw new DependencyInstallError(
+			"ARCHIVE_INVALID",
+			`tar-failed code=${code ?? "unknown"} ${messageOf(error)}`,
+		);
+	} finally {
+		source.destroy();
+		gunzip.destroy();
+		await reader.close().catch(() => undefined);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Instalador
 // ---------------------------------------------------------------------------
 
@@ -886,7 +1544,9 @@ export class OptionalDependencyInstaller {
 		try {
 			const root = this.toolsRoot();
 			const managedDir = path.join(root, kind);
-			if (await exists(managedDir)) {
+			// No Linux o Git é nativo: uma pasta `tools/git` residual nunca é
+			// tratada como instalação gerenciada.
+			if ((this.platform === "win32" || kind === "node") && (await exists(managedDir))) {
 				return await this.probeManaged(kind, managedDir, effective);
 			}
 			return await this.probePath(kind, effective);
@@ -924,10 +1584,10 @@ export class OptionalDependencyInstaller {
 	}
 
 	private toolsRoot(): string {
-		if (this.platform !== "win32") {
+		if (this.platform !== "win32" && this.platform !== "linux") {
 			throw new DependencyInstallError("UNSUPPORTED_PLATFORM", `platform=${this.platform}`);
 		}
-		return resolveDependencyToolsRoot(this.env);
+		return resolveDependencyToolsRoot(this.env, this.platform);
 	}
 
 	private probeFailure(kind: DependencyKind, error: unknown): DependencyProbe {
@@ -942,7 +1602,7 @@ export class OptionalDependencyInstaller {
 		managedDir: string,
 		signal: AbortSignal,
 	): Promise<DependencyProbe> {
-		const executable = managedExecutablePath(path.dirname(managedDir), kind);
+		const executable = managedExecutablePath(path.dirname(managedDir), kind, this.platform);
 		if (!(await exists(executable))) {
 			return {
 				state: "error",
@@ -952,7 +1612,7 @@ export class OptionalDependencyInstaller {
 			};
 		}
 		if (kind === "node") {
-			for (const required of managedNpmPaths(path.dirname(managedDir))) {
+			for (const required of managedNpmPaths(path.dirname(managedDir), this.platform)) {
 				if (!(await exists(required))) {
 					return {
 						state: "error",
@@ -976,7 +1636,7 @@ export class OptionalDependencyInstaller {
 	}
 
 	private async probePath(kind: DependencyKind, signal: AbortSignal): Promise<DependencyProbe> {
-		const found = await findOnPath(executableName(kind), this.env);
+		const found = await findOnPath(executableName(kind, this.platform), this.env);
 		if (!found) return { state: "missing", kind };
 		const version = await this.runProbe(kind, found, signal);
 		if (!version) {
@@ -993,7 +1653,9 @@ export class OptionalDependencyInstaller {
 	private probeEnv(kind: DependencyKind, executablePath: string): NodeJS.ProcessEnv {
 		const env: NodeJS.ProcessEnv = { ...this.env };
 		const dirs = [path.dirname(executablePath)];
-		if (kind === "git") {
+		if (this.platform === "win32" && kind === "git") {
+			// MinGit depende das DLLs em ucrt64/mingw64/usr; o wrapper cmd/git.exe
+			// não as encontra sozinho em todos os layouts.
 			const gitRoot = path.dirname(path.dirname(executablePath));
 			dirs.push(
 				path.join(gitRoot, "ucrt64", "bin"),
@@ -1037,7 +1699,8 @@ export class OptionalDependencyInstaller {
 		const managedDir = path.join(toolsRoot, kind);
 
 		// 1. Instalação gerenciada existente: adota se compatível, nunca sobrescreve.
-		if (await exists(managedDir)) {
+		// No Linux o Git é nativo; uma pasta `tools/git` residual é ignorada.
+		if ((this.platform === "win32" || kind === "node") && (await exists(managedDir))) {
 			const probe = await this.probeManaged(kind, managedDir, signal);
 			if (probe.state === "installed") {
 				this.log?.("info", "dependency.instalacao_existente_adotada", {
@@ -1064,6 +1727,16 @@ export class OptionalDependencyInstaller {
 				version: onPath.version,
 			});
 			return { kind, executablePath: onPath.executablePath, version: onPath.version };
+		}
+
+		if (this.platform === "linux" && kind === "git") {
+			// Git no Linux é sempre nativo: nunca baixamos MinGit, nunca rodamos
+			// sudo/apt/pacman e nunca pedimos senha. A UI mostra o comando fixo
+			// da distribuição e o usuário decide quando instalar.
+			throw new DependencyInstallError(
+				"MANUAL_INSTALL_REQUIRED",
+				"git-native-required platform=linux",
+			);
 		}
 
 		// 3. Metadados oficiais fixados ANTES do download.
@@ -1106,10 +1779,17 @@ export class OptionalDependencyInstaller {
 
 			options.onProgress?.({ phase: "extracting" });
 			await mkdir(extractDir, { recursive: true });
-			await extractZipArchive(archivePath, extractDir, {
-				stripTopLevelDir: artifact.stripTopLevelDir,
-				signal,
-			});
+			if (artifact.archiveFormat === "tar.gz") {
+				await extractTarGzArchive(archivePath, extractDir, {
+					stripTopLevelDir: artifact.stripTopLevelDir,
+					signal,
+				});
+			} else {
+				await extractZipArchive(archivePath, extractDir, {
+					stripTopLevelDir: artifact.stripTopLevelDir,
+					signal,
+				});
+			}
 
 			const extractedExecutable = path.join(extractDir, artifact.executablePath);
 			if (!(await exists(extractedExecutable))) {
@@ -1186,17 +1866,26 @@ export class OptionalDependencyInstaller {
 	}
 
 	private async resolveNodeArtifact(signal: AbortSignal): Promise<DependencyArtifact> {
-		const arch = nodeArch(this.arch);
+		const arch = nodeArch(this.arch, this.platform);
 		const index = parseNodeIndex(await this.fetchJson(NODE_LTS_INDEX_URL, signal));
-		const zipTag = `win-${arch}-zip`;
+		const linux = this.platform === "linux";
+		const fileTag = linux ? `linux-${arch}` : `win-${arch}-zip`;
 		const entry = index.find(
-			(candidate) => typeof candidate.lts === "string" && candidate.lts.length > 0 && candidate.files.includes(zipTag),
+			(candidate) =>
+				typeof candidate.lts === "string" &&
+				candidate.lts.length > 0 &&
+				candidate.files.includes(fileTag),
 		);
 		if (!entry) {
-			throw new DependencyInstallError("UNSUPPORTED_ARCH", `no-lts-zip arch=${arch}`);
+			throw new DependencyInstallError(
+				"UNSUPPORTED_ARCH",
+				`no-lts-${linux ? "tar" : "zip"} arch=${arch}`,
+			);
 		}
 		const version = entry.version.replace(/^v/, "");
-		const fileName = `node-v${version}-win-${arch}.zip`;
+		const fileName = linux
+			? `node-v${version}-linux-${arch}.tar.gz`
+			: `node-v${version}-win-${arch}.zip`;
 		const shasumsUrl = `${NODE_LTS_DIST_BASE_URL}/${entry.version}/SHASUMS256.txt`;
 		const shasums = await this.fetchText(shasumsUrl, signal);
 		const sha256 = parseShasums(shasums, fileName);
@@ -1211,8 +1900,16 @@ export class OptionalDependencyInstaller {
 			fileName,
 			maxDownloadBytes: NODE_MAX_DOWNLOAD_BYTES,
 			stripTopLevelDir: true,
-			executablePath: "node.exe",
-			requiredPaths: ["npm.cmd", "node_modules/npm/bin/npm-cli.js"],
+			archiveFormat: linux ? "tar.gz" : "zip",
+			executablePath: linux ? "bin/node" : "node.exe",
+			requiredPaths: linux
+				? [
+						"bin/npm",
+						"bin/npx",
+						"lib/node_modules/npm/bin/npm-cli.js",
+						"lib/node_modules/npm/bin/npx-cli.js",
+					]
+				: ["npm.cmd", "node_modules/npm/bin/npm-cli.js"],
 		};
 	}
 
@@ -1288,7 +1985,15 @@ export class OptionalDependencyInstaller {
 		try {
 			const response = await this.fetchWithRedirects(
 				artifact.url,
-				{ signal: deadline.signal, headers: { accept: "application/zip, application/octet-stream" } },
+				{
+					signal: deadline.signal,
+					headers: {
+						accept:
+							artifact.archiveFormat === "tar.gz"
+								? "application/gzip, application/octet-stream"
+								: "application/zip, application/octet-stream",
+					},
+				},
 				deadline.signal,
 			);
 			if (!response.ok || !response.body) {
@@ -1368,7 +2073,13 @@ function gitArch(arch: string): "x64" | "arm64" | "ia32" {
 	throw new DependencyInstallError("UNSUPPORTED_ARCH", `unsupported-arch=${arch}`);
 }
 
-function nodeArch(arch: string): "x64" | "arm64" {
+function nodeArch(arch: string, platform: NodeJS.Platform): "x64" | "arm64" {
+	if (platform === "linux") {
+		// Escopo desta entrega: Linux x86_64. ARM fica de fora por decisão do
+		// projeto, mesmo que o nodejs.org publique linux-arm64.
+		if (arch === "x64") return "x64";
+		throw new DependencyInstallError("UNSUPPORTED_ARCH", `unsupported-arch=${arch}`);
+	}
 	if (arch === "x64") return "x64";
 	if (arch === "arm64") return "arm64";
 	throw new DependencyInstallError("UNSUPPORTED_ARCH", `unsupported-arch=${arch}`);

@@ -20,7 +20,13 @@ import type {
 	RpcSubagentSubscriptionLevel,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import { isRecord } from "../shared/session-state";
-import { killProcessTree, ompLaunchSpec, waitForExit } from "./omp-cli";
+import {
+	captureProcessIdentity,
+	killProcessTree,
+	ompLaunchSpec,
+	waitForExit,
+	type ProcessIdentity,
+} from "./omp-cli";
 
 export interface OmpTransportOptions {
 	ompPath: string;
@@ -103,6 +109,7 @@ export class OmpTransport {
 	private readonly pending = new Map<string, PendingRequest>();
 	private readonly warnings: string[] = [];
 	private child: Bun.Subprocess<"pipe", "pipe", "pipe"> | undefined;
+	private identity: Promise<ProcessIdentity | undefined> | undefined;
 	private requestCounter = 0;
 	private protocolVersion: 1 | 2 = 1;
 	private maxFrameBytes = 1024 * 1024;
@@ -201,6 +208,9 @@ export class OmpTransport {
 				stdout: "pipe",
 				stderr: "pipe",
 				windowsHide: true,
+				// POSIX: líder do próprio grupo para o encerramento cobrir a árvore
+				// mesmo se o OMP reparentar filhos.
+				detached: process.platform !== "win32",
 				...(spec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
 			});
 		} catch (error) {
@@ -210,6 +220,9 @@ export class OmpTransport {
 			);
 		}
 		this.child = child;
+		this.identity = child.pid
+			? captureProcessIdentity(child.pid, spec.command)
+			: Promise.resolve(undefined);
 		void this.readStdout(child.stdout);
 		void this.readStderr(child.stderr);
 		this.exited = child.exited.then((code) => {
@@ -554,7 +567,8 @@ export class OmpTransport {
 		} catch {
 			/* já fechado */
 		}
-		await killProcessTree(child.pid);
+		const identity = this.identity ? await this.identity : undefined;
+		if (identity) await killProcessTree(identity);
 		await waitForExit(child.exited, 3_000);
 	}
 
@@ -603,7 +617,17 @@ export class OmpTransport {
 		const exited = this.exited ?? child.exited;
 		const ended = await waitForExit(exited, 10_000);
 		if (!ended) {
-			await killProcessTree(child.pid);
+			const identity = this.identity ? await this.identity : undefined;
+			const killed = identity ? await killProcessTree(identity) : false;
+			if (!killed) {
+				// Identidade indisponível/recusada: só o handle deste spawn é
+				// seguro; nunca resolve o PID de novo.
+				try {
+					child.kill();
+				} catch {
+					/* já saiu */
+				}
+			}
 			await waitForExit(exited, 5_000);
 		}
 		this.closed = true;

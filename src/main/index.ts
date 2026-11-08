@@ -43,7 +43,7 @@ import {
 	ompInstallTarget,
 	resolveOmpInstallDir,
 } from "./omp-install";
-import { isOmpVersionCompatible, RuntimeResolver } from "./runtime";
+import { desktopPlatform, isOmpVersionCompatible, RuntimeResolver } from "./runtime";
 import { sanitizeForRenderer } from "./sanitize";
 import { TerminalManager, terminalPids } from "./terminal";
 import { UiStateStore } from "./ui-state";
@@ -76,7 +76,7 @@ if (userDataOverride) {
 	}
 }
 
-app.setAppUserModelId("local.omp.desktop");
+if (process.platform === "win32") app.setAppUserModelId("local.omp.desktop");
 
 const smokeReportArg = argValue("--smoke-report");
 const initialCwdArg = argValue("--cwd");
@@ -98,7 +98,7 @@ let retrying = false;
 let initialCwdConsumed = false;
 let hostStatusSequence = 0;
 let selectedOmpPath: string | undefined;
-let runtimeStatus: RuntimeStatus = { phase: "starting-host", signed: false };
+let runtimeStatus: RuntimeStatus = { phase: "starting-host", signed: false, platform: desktopPlatform() };
 let installService: OmpInstallService | null = null;
 let installPromise: Promise<RuntimeStatus> | null = null;
 let lastInstallProgressAt = 0;
@@ -360,6 +360,7 @@ function buildSmokeReport(): Record<string, unknown> {
 	return {
 		ok: rendererLoaded && hostStarted && runtimeStatus.phase === "ready",
 		phase: runtimeStatus.phase,
+		platform: process.platform,
 		message: runtimeStatus.message ?? null,
 		windowLoaded: rendererLoaded,
 		hostStarted,
@@ -414,7 +415,7 @@ function errorPageHtml(message: string): string {
 <title>OMP Desktop — falha ao carregar</title>
 <style>
 html,body{height:100%;margin:0}
-body{background:#111315;color:#E6E8EA;font-family:"Segoe UI Variable","Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center}
+body{background:#111315;color:#E6E8EA;font-family:"Segoe UI Variable","Segoe UI",system-ui,"Noto Sans",sans-serif;display:flex;align-items:center;justify-content:center}
 main{max-width:560px;padding:32px}
 h1{font-size:20px;font-weight:600;margin:0 0 12px}
 p{font-size:14px;line-height:1.5;color:#A4AAB2;margin:0 0 24px;white-space:pre-wrap}
@@ -612,7 +613,12 @@ function titleBarOverlayColors(): { color: string; symbolColor: string; height: 
 /** Mantém overlay nativo e fundo da janela coerentes com o tema efetivo. */
 function syncTitleBarTheme(win: BrowserWindow | null = mainWindow): void {
 	if (!win || win.isDestroyed()) return;
-	win.setTitleBarOverlay(titleBarOverlayColors());
+	try {
+		win.setTitleBarOverlay(titleBarOverlayColors());
+	} catch {
+		// Plataformas/gerenciadores de janela sem overlay usam a barra própria
+		// do renderer; o fundo continua sincronizado abaixo.
+	}
 	win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#0e1013" : "#e4e8ed");
 }
 
@@ -640,13 +646,17 @@ function createWindow(): BrowserWindow {
 		backgroundColor: nativeTheme.shouldUseDarkColors ? "#0e1013" : "#e4e8ed",
 		autoHideMenuBar: true,
 		// Barra de título própria: o renderer desenha marca, título e ações;
-		// minimizar, maximizar e fechar continuam nativos do Windows (overlay).
+		// minimizar, maximizar e fechar continuam nativos (overlay no Windows e
+		// no Linux). O renderer já marca as regiões arrastáveis via
+		// `-webkit-app-region`, então nenhum patch de UI é necessário.
 		titleBarStyle: "hidden",
 		titleBarOverlay: titleBarOverlayColors(),
 		webPreferences: {
 			preload: preloadPath,
 			contextIsolation: true,
 			nodeIntegration: false,
+			// Produção nunca desativa o sandbox: o pacote Linux precisa do
+			// chrome-sandbox SUID ou do perfil AppArmor oficial.
 			sandbox: true,
 			webviewTag: false,
 			spellcheck: false,

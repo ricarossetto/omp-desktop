@@ -268,4 +268,42 @@ describe("ambiente e logs", () => {
 		expect(line).toContain("[usuario]");
 		expect(line).not.toContain("Fulano");
 	});
+
+	if (process.platform !== "win32") {
+		test("env POSIX mantém XDG/DISPLAY/DBUS/SSH e corta credenciais desconhecidas", () => {
+			const env = buildHostEnv({
+				PATH: "/usr/local/bin:/usr/bin",
+				HOME: "/home/usuaria",
+				USER: "usuaria",
+				SHELL: "/bin/bash",
+				XDG_DATA_HOME: "/home/usuaria/.local/share",
+				XDG_CONFIG_HOME: "/home/usuaria/.config",
+				XDG_RUNTIME_DIR: "/run/user/1000",
+				DISPLAY: ":0",
+				WAYLAND_DISPLAY: "wayland-0",
+				DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+				SSH_AUTH_SOCK: "/run/user/1000/ssh-agent.socket",
+				LANG: "pt_BR.UTF-8",
+				MY_SERVICE_KEY: "não deve passar",
+				ELECTRON_RUN_AS_NODE: "1",
+			});
+			expect(env.PATH).toBe("/usr/local/bin:/usr/bin");
+			expect(env.HOME).toBe("/home/usuaria");
+			expect(env.SHELL).toBe("/bin/bash");
+			expect(env.XDG_DATA_HOME).toBe("/home/usuaria/.local/share");
+			expect(env.XDG_RUNTIME_DIR).toBe("/run/user/1000");
+			expect(env.DISPLAY).toBe(":0");
+			expect(env.WAYLAND_DISPLAY).toBe("wayland-0");
+			expect(env.DBUS_SESSION_BUS_ADDRESS).toBe("unix:path=/run/user/1000/bus");
+			expect(env.SSH_AUTH_SOCK).toBe("/run/user/1000/ssh-agent.socket");
+			expect(env.MY_SERVICE_KEY).toBeUndefined();
+			expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+		});
+
+		test("redige o home POSIX nos logs", () => {
+			const line = redactLogLine("erro em /home/Fulano/projetos/app.log");
+			expect(line).toContain("/home/[usuario]/projetos");
+			expect(line).not.toContain("Fulano");
+		});
+	}
 });

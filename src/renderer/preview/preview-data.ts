@@ -234,6 +234,7 @@ export function previewAppState(withDialogs = false): AppState {
 	return {
 		runtime: {
 			phase: "ready",
+			platform: "win32",
 			ompPath: "C:\\Users\\preview\\.bun\\bin\\omp.exe",
 			ompVersion: "18.16.0",
 			gitVersion: "2.47.1.windows.1",

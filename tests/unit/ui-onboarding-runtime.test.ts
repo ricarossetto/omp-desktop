@@ -7,6 +7,7 @@ import {
 
 const base: RuntimeStatus = {
 	phase: "ready",
+	platform: "win32",
 	ompPath: "C:\\omp\\omp.exe",
 	ompVersion: "18.16.0",
 	signed: false,
@@ -42,6 +43,13 @@ describe("override do onboarding", () => {
 		expect(effectiveOnboardingRuntime(override, runtime)?.gitVersion).toBe("2.56.0");
 		const runtimeWithoutGit = { ...base, gitVersion: undefined, dependencies: depsA };
 		expect(effectiveOnboardingRuntime(override, runtimeWithoutGit)?.gitVersion).toBeUndefined();
+	});
+
+	test("plataforma vem do runtime, nunca de um override antigo", () => {
+		const override = { ...base, platform: undefined };
+		const runtime = { ...base, platform: "linux" as const };
+		expect(effectiveOnboardingRuntime(override, runtime)?.platform).toBe("linux");
+		expect(effectiveOnboardingRuntime(override, null)?.platform).toBeUndefined();
 	});
 
 	test("sem override usa o runtime do store", () => {

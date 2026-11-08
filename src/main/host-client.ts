@@ -1,15 +1,23 @@
 /**
  * Cliente do host Bun: spawn com argv (sem shell), JSONL sobre stdin/stdout,
- * correlação de requests por id, backpressure, rejeição de pendências na saída
- * e logs de stderr redigidos.
+ * correlação de requests por id, remontagem de mensagens fragmentadas,
+ * backpressure, rejeição de pendências na saída e logs de stderr redigidos.
  *
  * Não importa Electron; testes injetam um processo falso.
  */
 import { spawn } from "node:child_process";
 import type { DesktopEvent } from "../shared/contracts";
 import {
+	HOST_CHUNK_KIND,
+	HostChunkAssembler,
+	parseHostChunkFrame,
+	type AssembledHostChunk,
+	type HostChunkEventMeta,
+	type HostChunkFailure,
+	type HostChunkFrame,
+} from "../shared/host-wire";
+import {
 	captureProcessIdentity,
-	isProcessRunning,
 	killProcessTree,
 	type ProcessIdentity,
 } from "./process-tree";
@@ -55,7 +63,7 @@ export interface HostClientOptions {
 	onSpawnError?(error: Error): void;
 	log?(level: "info" | "warn" | "error", message: string): void;
 	spawnImpl?: HostSpawn;
-	/** Timeout padrão de request ao host; 0 desliga. */
+	/** Timeout padrão de request ao host; também é o deadline de streams de evento fragmentados; 0 desliga. */
 	requestTimeoutMs?: number;
 	maxLineBytes?: number;
 }
@@ -78,8 +86,9 @@ const SECRET_ENV_NAMES = /(token|secret|password|passwd|credential|api[_-]?key)/
 
 /**
  * Variáveis repassadas ao host. Mantém o necessário para o perfil OMP
- * (USERPROFILE/APPDATA), rede e credenciais de provedores, e corta o resto
- * do ambiente do Electron.
+ * (USERPROFILE/APPDATA no Windows; HOME/XDG no Linux), rede, sessão gráfica
+ * (DISPLAY/Wayland/DBus para ferramentas que abrem janelas) e credenciais de
+ * provedores, e corta o resto do ambiente do Electron.
  */
 const ENV_KEEP = new Set(
 	[
@@ -105,9 +114,39 @@ const ENV_KEEP = new Set(
 		"ProgramW6432",
 		"ProgramData",
 		"HOME",
+		"USER",
+		"LOGNAME",
+		"SHELL",
+		"TMPDIR",
+		"XDG_DATA_HOME",
+		"XDG_CONFIG_HOME",
+		"XDG_CACHE_HOME",
+		"XDG_STATE_HOME",
+		"XDG_RUNTIME_DIR",
+		"XDG_SESSION_TYPE",
+		"DISPLAY",
+		"WAYLAND_DISPLAY",
+		"DBUS_SESSION_BUS_ADDRESS",
+		"SSH_AUTH_SOCK",
+		"SSH_AGENT_PID",
+		"XAUTHORITY",
 		"LANG",
+		"LANGUAGE",
 		"LC_ALL",
+		"LC_CTYPE",
+		"LC_MESSAGES",
+		"LC_NUMERIC",
+		"LC_TIME",
+		"LC_COLLATE",
+		"LC_MONETARY",
+		"LC_PAPER",
+		"LC_NAME",
+		"LC_ADDRESS",
+		"LC_TELEPHONE",
+		"LC_MEASUREMENT",
+		"LC_IDENTIFICATION",
 		"TERM",
+		"COLORTERM",
 		"TZ",
 		"NUMBER_OF_PROCESSORS",
 		"PROCESSOR_ARCHITECTURE",
@@ -169,6 +208,7 @@ export function redactLogLine(line: string): string {
 	out = out.replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[removido]");
 	out = out.replace(/([?&](?:code|access_token|refresh_token|id_token)=)[^&\s]+/gi, "$1[removido]");
 	out = out.replace(/([A-Za-z]:\\Users\\)[^\\\s]+/gi, "$1[usuario]");
+	out = out.replace(/(\/(?:home|Users)\/)[^/\s]+/g, "$1[usuario]");
 	if (out.length > 2000) out = `${out.slice(0, 2000)}…`;
 	return out;
 }
@@ -292,6 +332,17 @@ export class JsonlLineDecoder {
 		return this.discarded.splice(0, this.discarded.length);
 	}
 
+	/** Limpa estado parcial entre processos do host. */
+	reset(): void {
+		this.parts = [];
+		this.size = 0;
+		this.discarding = false;
+		this.discardedBytes = 0;
+		this.discardPrefixParts = [];
+		this.discardPrefixSize = 0;
+		this.discarded.length = 0;
+	}
+
 	get pendingBytes(): number {
 		return this.size;
 	}
@@ -309,10 +360,54 @@ function isDesktopEvent(value: unknown): value is DesktopEvent {
 	);
 }
 
+function sameEventIdentity(meta: HostChunkEventMeta, event: DesktopEvent): boolean {
+	return (
+		event.workspaceId === meta.workspaceId &&
+		event.sessionId === meta.sessionId &&
+		event.generation === meta.generation &&
+		event.sequence === meta.sequence &&
+		event.name === meta.name
+	);
+}
+
+/**
+ * Extrai a identidade do evento do prefixo de um frame descartado. O envelope
+ * coloca `event` antes de `data`, então os campos cabem no prefixo limitado do
+ * decoder mesmo quando a linha inteira foi descartada.
+ */
+function parseEventPrefix(prefix: string): HostChunkEventMeta | undefined {
+	const start = prefix.indexOf('"event":');
+	if (start < 0) return undefined;
+	const slice = prefix.slice(start);
+	const workspaceId = /"workspaceId"\s*:\s*"([^"\\]{1,256})"/.exec(slice)?.[1];
+	const sessionId = /"sessionId"\s*:\s*"([^"\\]{1,256})"/.exec(slice)?.[1];
+	const generation = Number(/"generation"\s*:\s*(-?\d+)/.exec(slice)?.[1]);
+	const sequence = Number(/"sequence"\s*:\s*(-?\d+)/.exec(slice)?.[1]);
+	const name = /"name"\s*:\s*"([^"\\]{1,256})"/.exec(slice)?.[1];
+	if (!workspaceId || !name || !Number.isFinite(generation) || !Number.isFinite(sequence)) {
+		return undefined;
+	}
+	return {
+		workspaceId,
+		...(sessionId ? { sessionId } : {}),
+		generation,
+		sequence,
+		name,
+	};
+}
+
 export class HostClient {
 	private child: HostProcessLike | null = null;
 	private readonly pending = new Map<string, PendingRequest>();
 	private readonly decoder: JsonlLineDecoder;
+	private readonly chunks = new HostChunkAssembler();
+	/** Deadline único por fluxo de evento; limpa payload parcial órfão. */
+	private readonly eventDeadlines = new Map<
+		string,
+		{ timer: ReturnType<typeof setTimeout>; event?: HostChunkEventMeta }
+	>();
+	/** Evita repetir o sinal de resync para o mesmo evento perdido. */
+	private readonly resyncSignaled = new Set<string>();
 	private readonly stderrTail: string[] = [];
 	private requestCounter = 0;
 	private writeQueue: string[] = [];
@@ -341,10 +436,24 @@ export class HostClient {
 		return this.child !== null && !this.exitHandled;
 	}
 
+	/** Diagnóstico/testes: fluxos de fragmentos ainda em memória. */
+	get pendingChunkStreams(): number {
+		return this.chunks.pendingStreams;
+	}
+
+	/** Diagnóstico/testes: bytes de payload parcial retidos. */
+	get pendingChunkBytes(): number {
+		return this.chunks.pendingBytes;
+	}
+
 	async start(): Promise<void> {
 		if (this.child) throw new HostClientError("INVALID_REQUEST", "O host já foi iniciado.");
 		this.exitHandled = false;
 		this.closing = false;
+		this.decoder.reset();
+		this.chunks.clear();
+		this.resyncSignaled.clear();
+		this.clearEventDeadlines();
 		const spawnImpl = this.opts.spawnImpl ?? (spawn as unknown as HostSpawn);
 		let child: HostProcessLike;
 		try {
@@ -354,7 +463,9 @@ export class HostClient {
 				stdio: ["pipe", "pipe", "pipe"],
 				windowsHide: true,
 				shell: false,
-				detached: false,
+				// No POSIX o host vira líder do próprio grupo; o encerramento
+				// sinaliza o grupo inteiro, cobrindo filhos reparentados.
+				detached: process.platform !== "win32",
 			});
 		} catch (error) {
 			throw new HostClientError(
@@ -400,19 +511,193 @@ export class HostClient {
 			}
 			if (typeof message !== "object" || message === null) continue;
 			const record = message as Record<string, unknown>;
-			if (record.kind === "response" && typeof record.id === "string") {
-				this.settle(record);
+			if (record.kind === HOST_CHUNK_KIND) {
+				this.handleChunk(record);
 				continue;
 			}
-			if (isDesktopEvent(message)) {
-				try {
-					this.opts.onEvent(message);
-				} catch (error) {
-					this.log("error", `falha ao processar evento do host: ${(error as Error).message}`);
-				}
-				continue;
+			this.dispatchMessage(record);
+		}
+	}
+
+	private dispatchMessage(record: Record<string, unknown>): void {
+		if (record.kind === "response" && typeof record.id === "string") {
+			this.settle(record);
+			return;
+		}
+		if (isDesktopEvent(record)) {
+			try {
+				this.opts.onEvent(record);
+			} catch (error) {
+				this.log("error", `falha ao processar evento do host: ${(error as Error).message}`);
 			}
-			this.log("warn", "mensagem desconhecida recebida do host (ignorada)");
+			return;
+		}
+		this.log("warn", "mensagem desconhecida recebida do host (ignorada)");
+	}
+
+	private handleChunk(record: Record<string, unknown>): void {
+		const parsed = parseHostChunkFrame(record);
+		if (!parsed.ok) {
+			this.failChunk(parsed.failure);
+			return;
+		}
+		const frame = parsed.frame;
+		// Resposta já resolvida/expirada: não remonta payload que ninguém vai
+		// consumir. O timeout/rejeição já removeu o fluxo correlacionado.
+		if (frame.responseId && !this.pending.has(frame.responseId)) {
+			this.dropChunkStream(frame.id);
+			if (frame.index === 0) this.log("warn", `resposta fragmentada sem solicitante (${frame.responseId})`);
+			return;
+		}
+		// Fluxos de evento não têm request pendente: um deadline único limpa o
+		// payload parcial se o host parar no meio e não encerrar o processo.
+		if (frame.index === 0 && !frame.responseId) this.armEventDeadline(frame);
+		const result = this.chunks.push(frame);
+		if (result.failure) this.failChunk(result.failure);
+		if (result.assembled) {
+			this.clearEventDeadline(result.assembled.id);
+			this.deliverAssembled(result.assembled);
+		}
+	}
+
+	private armEventDeadline(frame: HostChunkFrame): void {
+		if (this.eventDeadlines.has(frame.id)) return;
+		const timeoutMs = this.requestTimeoutMs;
+		if (timeoutMs <= 0) return;
+		const event = frame.event;
+		const timer = setTimeout(() => {
+			this.dropChunkStream(frame.id);
+			this.log(
+				"error",
+				`evento fragmentado incompleto; fluxo ${frame.id} descartado após ${Math.round(timeoutMs / 1000)} s.`,
+			);
+			if (event) {
+				this.signalEventResync(
+					event,
+					"stream-timeout",
+					`o fluxo ${frame.id} não completou em ${Math.round(timeoutMs / 1000)} s.`,
+				);
+			}
+		}, timeoutMs);
+		this.eventDeadlines.set(frame.id, { timer, event });
+	}
+
+	private clearEventDeadline(id: string): void {
+		const entry = this.eventDeadlines.get(id);
+		if (!entry) return;
+		clearTimeout(entry.timer);
+		this.eventDeadlines.delete(id);
+	}
+
+	private clearEventDeadlines(): void {
+		for (const entry of this.eventDeadlines.values()) clearTimeout(entry.timer);
+		this.eventDeadlines.clear();
+	}
+
+	private dropChunkStream(id: string): void {
+		this.clearEventDeadline(id);
+		this.chunks.dropById(id);
+	}
+
+	private failChunk(failure: HostChunkFailure): void {
+		const event = failure.event ?? (failure.id ? this.chunks.eventOf(failure.id) : undefined);
+		if (failure.id) this.dropChunkStream(failure.id);
+		const detail = `O host enviou uma mensagem fragmentada inválida (${failure.reason}): ${failure.detail}`;
+		this.log("error", detail);
+		if (failure.responseId) {
+			this.rejectPending(failure.responseId, new HostClientError("INTERNAL", detail));
+			return;
+		}
+		if (event) this.signalEventResync(event, failure.reason, failure.detail);
+	}
+
+	private deliverAssembled(assembled: AssembledHostChunk): void {
+		let message: unknown;
+		try {
+			message = JSON.parse(assembled.text);
+		} catch {
+			const detail = "O host enviou uma mensagem fragmentada com JSON inválido.";
+			this.log("error", detail);
+			if (assembled.responseId) {
+				this.rejectPending(assembled.responseId, new HostClientError("INTERNAL", detail));
+			} else if (assembled.event) {
+				this.signalEventResync(assembled.event, "invalid-frame", detail);
+			}
+			return;
+		}
+		if (typeof message !== "object" || message === null) {
+			const detail = "O host enviou uma mensagem fragmentada que não é um objeto JSON.";
+			this.log("error", detail);
+			if (assembled.responseId) {
+				this.rejectPending(assembled.responseId, new HostClientError("INTERNAL", detail));
+			} else if (assembled.event) {
+				this.signalEventResync(assembled.event, "invalid-frame", detail);
+			}
+			return;
+		}
+		const record = message as Record<string, unknown>;
+		if (assembled.responseId) {
+			if (record.kind !== "response" || record.id !== assembled.responseId) {
+				const detail = "O host enviou uma resposta fragmentada com correlação inconsistente.";
+				this.log("error", detail);
+				this.rejectPending(assembled.responseId, new HostClientError("INTERNAL", detail));
+				return;
+			}
+		} else if (assembled.event) {
+			if (!isDesktopEvent(record) || !sameEventIdentity(assembled.event, record)) {
+				const detail = "O host enviou um evento fragmentado com identidade inconsistente.";
+				this.log("error", detail);
+				this.signalEventResync(assembled.event, "invalid-frame", detail);
+				return;
+			}
+		}
+		this.dispatchMessage(record);
+	}
+
+	private rejectPending(id: string, error: HostClientError): void {
+		const entry = this.pending.get(id);
+		if (!entry) {
+			this.chunks.dropResponse(id);
+			return;
+		}
+		this.pending.delete(id);
+		clearTimeout(entry.timer);
+		entry.reject(error);
+		this.chunks.dropResponse(id);
+	}
+
+	/**
+	 * Um evento fragmentado perdido deixa uma lacuna de sequência. O evento
+	 * sintético abaixo usa a sequência seguinte à perdida para que o renderer
+	 * classifique a lacuna como `resync`; isso também cobre o caso em que o
+	 * próximo evento real é `session.status`, cujo tratamento especial poderia
+	 * mascarar a lacuna. O evento sintético nunca é aplicado ao reducer.
+	 */
+	private signalEventResync(event: HostChunkEventMeta, reason: string, detail: string): void {
+		// Eventos sem sessão (host.status) não têm estado de reducer para
+		// ressincronizar; o log de falha já é o sinal explícito.
+		if (!event.sessionId) return;
+		const key = `${event.workspaceId}\u0000${event.sessionId}\u0000${event.generation}\u0000${event.sequence}`;
+		if (this.resyncSignaled.has(key)) return;
+		this.resyncSignaled.add(key);
+		const sequence = event.sequence < Number.MAX_SAFE_INTEGER ? event.sequence + 1 : event.sequence;
+		const synthetic: DesktopEvent = {
+			kind: "event",
+			workspaceId: event.workspaceId,
+			sessionId: event.sessionId,
+			generation: event.generation,
+			sequence,
+			name: "wire.resync",
+			data: { reason, detail },
+		};
+		this.log(
+			"error",
+			`evento fragmentado perdido (${reason}); sinalizando resync em ${event.workspaceId}/${event.sessionId} sequência ${event.sequence}.`,
+		);
+		try {
+			this.opts.onEvent(synthetic);
+		} catch (error) {
+			this.log("error", `falha ao sinalizar resync do host: ${(error as Error).message}`);
 		}
 	}
 
@@ -420,30 +705,44 @@ export class HostClient {
 	 * Descarta a linha grande sem derrubar o host. Se o prefixo ainda identifica
 	 * a resposta de uma request pendente, só aquela request falha com
 	 * `FRAME_TOO_LARGE`; as demais continuam e o parser segue no próximo `\n`.
+	 * Fragmentos descartados também limpam o fluxo parcial e sinalizam resync
+	 * quando a identidade do evento está no prefixo.
 	 */
 	private rejectDiscardedResponses(): void {
 		for (const dropped of this.decoder.takeDiscarded()) {
 			const message = `O host enviou uma linha de ${dropped.bytes} bytes acima do limite de ${this.maxLineBytes} bytes.`;
+			if (/^\s*\{\s*"kind"\s*:\s*"chunk"/.test(dropped.prefix)) {
+				this.log("error", `fragmento descartado: ${message}`);
+				const chunkId = /"id"\s*:\s*"([A-Za-z0-9._:-]{1,128})"/.exec(dropped.prefix)?.[1];
+				const existingEvent = chunkId ? this.chunks.eventOf(chunkId) : undefined;
+				if (chunkId) this.dropChunkStream(chunkId);
+				const responseId = /"responseId"\s*:\s*"([A-Za-z0-9._:-]{1,128})"/.exec(dropped.prefix)?.[1];
+				if (responseId) {
+					this.rejectPending(responseId, new HostClientError("FRAME_TOO_LARGE", message));
+					continue;
+				}
+				const event = parseEventPrefix(dropped.prefix) ?? existingEvent;
+				if (event) this.signalEventResync(event, "frame-too-large", message);
+				continue;
+			}
 			this.log("error", `resposta descartada: ${message}`);
 			if (!/^\s*\{\s*"kind"\s*:\s*"response"/.test(dropped.prefix)) continue;
 			const id = /"id"\s*:\s*"([A-Za-z0-9._:-]{1,64})"/.exec(dropped.prefix)?.[1];
 			if (!id) continue;
-			const entry = this.pending.get(id);
-			if (!entry) continue;
-			this.pending.delete(id);
-			clearTimeout(entry.timer);
-			entry.reject(new HostClientError("FRAME_TOO_LARGE", message));
+			this.rejectPending(id, new HostClientError("FRAME_TOO_LARGE", message));
 		}
 	}
 
 	private settle(record: Record<string, unknown>): void {
-		const entry = this.pending.get(record.id as string);
+		const id = record.id as string;
+		const entry = this.pending.get(id);
 		if (!entry) {
 			this.log("warn", `resposta sem solicitante (${String(record.id)})`);
 			return;
 		}
-		this.pending.delete(record.id as string);
+		this.pending.delete(id);
 		clearTimeout(entry.timer);
+		this.chunks.dropResponse(id);
 		if (record.ok === true) {
 			entry.resolve(record.data);
 			return;
@@ -488,6 +787,7 @@ export class HostClient {
 				`O serviço local encerrou (${suffix}).${stderr.length > 0 ? ` Detalhe: ${stderr.slice(-500)}` : ""}`,
 			),
 		);
+		this.decoder.reset();
 		const waiters = this.exitWaiters;
 		this.exitWaiters = [];
 		for (const resolve of waiters) resolve();
@@ -495,6 +795,9 @@ export class HostClient {
 	}
 
 	private failAll(error: HostClientError): void {
+		this.clearEventDeadlines();
+		this.chunks.clear();
+		this.resyncSignaled.clear();
 		for (const [id, entry] of this.pending) {
 			this.pending.delete(id);
 			clearTimeout(entry.timer);
@@ -527,6 +830,7 @@ export class HostClient {
 			if (timeoutMs > 0) {
 				entry.timer = setTimeout(() => {
 					if (!this.pending.delete(id)) return;
+					this.chunks.dropResponse(id);
 					reject(
 						new HostClientError(
 							"INTERNAL",
@@ -580,14 +884,17 @@ export class HostClient {
 	}
 
 	/**
-	 * Encerra a árvore somente depois de confirmar que o PID ainda é o processo
-	 * iniciado neste cliente. A identidade é capturada logo após o spawn.
+	 * Encerra a árvore somente com a identidade capturada no spawn. Sem
+	 * identidade (ou com PID diferente) nenhum sinal por número é enviado; o
+	 * chamador usa o handle do processo como fallback.
 	 */
 	private async killOwnedProcess(pid: number): Promise<void> {
-		const identity = this.identityPromise
-			? await this.identityPromise
-			: { pid, startedAt: Date.now() };
-		await killProcessTree(identity.pid === pid ? identity : pid);
+		const identity = this.identityPromise ? await this.identityPromise : undefined;
+		if (!identity || identity.pid !== pid) {
+			this.log("warn", `host.identidade_indisponivel pid=${pid}`);
+			return;
+		}
+		await killProcessTree(identity);
 	}
 
 	/**
@@ -617,12 +924,12 @@ export class HostClient {
 		if (timedOut && this.child && !this.exitHandled) {
 			this.log("warn", "host não saiu a tempo; encerrando a árvore do processo");
 			if (child.pid) await this.killOwnedProcess(child.pid);
-			if (isProcessRunning(child.pid ?? 0)) {
-				try {
-					child.kill("SIGKILL");
-				} catch {
-					/* já encerrado */
-				}
+			// Fallback pelo handle do processo criado por este cliente; nunca
+			// resolve o PID de novo (evita matar um PID reutilizado).
+			try {
+				child.kill("SIGKILL");
+			} catch {
+				/* já encerrado */
 			}
 			let forceTimer: ReturnType<typeof setTimeout> | undefined;
 			await Promise.race([

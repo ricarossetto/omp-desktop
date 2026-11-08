@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { launch, quit, type Launched } from "./helpers";
 
+// Este spec cobre MinGit/node.exe/where.exe do Windows. O fluxo Linux
+// (Git nativo com instrução apt/pacman, Node linux-x64 tar.gz) é coberto
+// pelos testes unitários de main-dependency-install e pelo smoke real.
+test.skip(process.platform !== "win32", "Windows-only optional tools UI (MinGit/node.exe)");
+
 /**
  * PATH sem git.exe/node.exe (a máquina de desenvolvimento pode tê-los) e com
  * Bun explícito. O perfil/LOCALAPPDATA temporários isolam a pasta gerenciada

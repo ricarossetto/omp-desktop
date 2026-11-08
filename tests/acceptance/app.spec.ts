@@ -44,7 +44,9 @@ test("terminal PTY real executa comando no workspace", async () => {
 	await page.keyboard.press("Control+`");
 	await expect(page.getByText("Conectado")).toBeVisible({ timeout: 20_000 });
 	await page.waitForTimeout(1500);
-	await page.keyboard.type("Write-Output 'terminal-ok'\n");
+	await page.keyboard.type(
+		process.platform === "win32" ? "Write-Output 'terminal-ok'\n" : "echo terminal-ok\n",
+	);
 	await expect(page.locator(".xterm-rows")).toContainText("terminal-ok", { timeout: 15_000 });
 	await page.screenshot({ path: "test-results/terminal.png" });
 	await quit(l);

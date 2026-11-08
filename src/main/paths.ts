@@ -1,10 +1,14 @@
 /**
  * Validação de caminhos relativos ao workspace.
  *
- * Regras (Windows):
- * - Somente caminhos relativos; absolutos, UNC, drive-relativo e `\\?\` são recusados.
- * - `..`, NUL, ADS (`arquivo:stream`) e caracteres inválidos são recusados.
+ * Regras universais:
+ * - Somente caminhos relativos; `..`, NUL e caracteres de controle são recusados.
  * - O caminho final precisa continuar dentro do workspace depois de resolver symlinks.
+ *
+ * Regras adicionais do Windows: absolutos/UNC/drive-relativo, ADS
+ * (`arquivo:stream`) e caracteres inválidos (`<>"|?*`). No POSIX esses nomes
+ * são válidos e não podem ser recusados; a barra invertida continua aceita
+ * como separador de entrada por compatibilidade com o renderer.
  *
  * Este módulo não importa `electron` para poder ser testado com bun test.
  */
@@ -23,6 +27,8 @@ export class PathValidationError extends Error {
 }
 
 const WINDOWS = process.platform === "win32";
+/** No Windows a barra invertida também separa; no POSIX ela é um caractere válido. */
+const SEPARATORS = WINDOWS ? /[\\/]+/ : /\//;
 
 /** Separa um caminho em segmentos validados (sem `..`, sem ADs, sem vazio). */
 export function validateRelativePath(input: unknown): string {
@@ -35,28 +41,37 @@ export function validateRelativePath(input: unknown): string {
 	if (input.includes("\0")) {
 		throw new PathValidationError("O caminho contém um byte nulo.");
 	}
-	if (/^[a-zA-Z]:/.test(input)) {
+	// Controle (inclui quebra de linha) corromperia logs e o protocolo; é uma
+	// regra de segurança do aplicativo, não uma regra do Windows.
+	// eslint-disable-next-line no-control-regex
+	if (/[\u0000-\u001f]/.test(input)) {
+		throw new PathValidationError("O caminho contém caracteres de controle.");
+	}
+	if (WINDOWS) {
+		if (/^[a-zA-Z]:/.test(input)) {
+			throw new PathValidationError("Caminhos absolutos não são permitidos; use um caminho relativo ao projeto.");
+		}
+		if (input.startsWith("\\\\") || input.startsWith("//")) {
+			throw new PathValidationError("Caminhos de rede (UNC) não são permitidos.");
+		}
+	}
+	if (input.startsWith("/") || (WINDOWS && input.startsWith("\\"))) {
 		throw new PathValidationError("Caminhos absolutos não são permitidos; use um caminho relativo ao projeto.");
 	}
-	if (input.startsWith("\\\\") || input.startsWith("//")) {
-		throw new PathValidationError("Caminhos de rede (UNC) não são permitidos.");
-	}
-	if (input.startsWith("/") || input.startsWith("\\")) {
-		throw new PathValidationError("Caminhos absolutos não são permitidos; use um caminho relativo ao projeto.");
-	}
-	const segments = input.split(/[\\/]+/);
+	const segments = input.split(SEPARATORS);
 	const result: string[] = [];
 	for (const segment of segments) {
 		if (segment.length === 0 || segment === ".") continue;
 		if (segment === "..") {
 			throw new PathValidationError("O caminho não pode sair do projeto (..).");
 		}
-		if (segment.includes(":")) {
-			throw new PathValidationError("O caminho contém um fluxo alternativo (:) não permitido.");
-		}
-		// eslint-disable-next-line no-control-regex
-		if (/[<>"|?*\u0000-\u001f]/.test(segment)) {
-			throw new PathValidationError("O caminho contém caracteres inválidos no Windows.");
+		if (WINDOWS) {
+			if (segment.includes(":")) {
+				throw new PathValidationError("O caminho contém um fluxo alternativo (:) não permitido.");
+			}
+			if (/[<>"|?*]/.test(segment)) {
+				throw new PathValidationError("O caminho contém caracteres inválidos no Windows.");
+			}
 		}
 		result.push(segment);
 	}

@@ -98,6 +98,14 @@ describe("URLs do renderer", () => {
 		).toBe(false);
 	});
 
+	if (process.platform !== "win32") {
+		test("POSIX compara o caminho do arquivo com caixa exata", () => {
+			const upper = productionFile.replace(/index\.html$/i, "INDEX.html");
+			expect(upper).not.toBe(productionFile);
+			expect(isAllowedRendererUrl(upper, authorized)).toBe(false);
+		});
+	}
+
 	test("dev exige loopback 127.0.0.1", () => {
 		expect(validateDevRendererUrl("http://127.0.0.1:5173/")).toBe("http://127.0.0.1:5173/");
 		expect(validateDevRendererUrl("http://localhost:5173/")).toBeUndefined();

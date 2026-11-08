@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=OMP Desktop
+Comment=Unofficial desktop client for the OMP coding agent
+Exec=omp-desktop %U
+TryExec=omp-desktop
+Icon=omp-desktop
+Terminal=false
+Categories=Development;
+Keywords=omp;ai;coding;agent;
+StartupWMClass=omp-desktop
+StartupNotify=true
