@@ -364,16 +364,26 @@ function descendantsFromPairs(rootPid: number, pairs: Array<[number, number]>): 
 
 async function killWindowsTree(identity: ProcessIdentity, force: boolean): Promise<boolean> {
 	const forceFlag = force ? ["/F"] : [];
-	// Filhos primeiro: se o pai sair antes, a árvore pode ser reparentada e
-	// escapar do taskkill /T.
+	// Caminho rápido: `taskkill /T` encerra a árvore numa única chamada. A
+	// varredura de descendentes (PowerShell/CIM, lenta em runners frios) fica
+	// como fallback para quando a raiz sobrevive — por exemplo, um filho
+	// reparentado durante a saída. A identidade já foi conferida em
+	// `killProcessTree` imediatamente antes desta chamada.
+	const direct = await runCommand("taskkill.exe", [
+		"/T",
+		...forceFlag,
+		"/PID",
+		String(identity.pid),
+	]);
+	if (direct.code === 0 || !isProcessRunning(identity.pid)) return true;
+	// Fallback: filhos primeiro, depois a raiz, reconferindo a identidade
+	// depois da varredura para não sinalizar um PID reciclado.
 	const descendants = await listWindowsDescendants(identity.pid);
 	for (const pid of descendants) {
 		await runCommand("taskkill.exe", ["/T", ...forceFlag, "/PID", String(pid)]);
 	}
-	// O pai pode ter saído durante a limpeza dos filhos; nesse caso não há mais
-	// nada a encerrar. Se o PID ainda existe mas não é mais o processo iniciado,
-	// ele foi reciclado e não deve receber taskkill.
-	if (!(await matchesIdentity(identity))) return !isProcessRunning(identity.pid);
+	const stillOurs = await matchesIdentity(identity);
+	if (!stillOurs) return !isProcessRunning(identity.pid);
 	const result = await runCommand("taskkill.exe", [
 		"/T",
 		...forceFlag,

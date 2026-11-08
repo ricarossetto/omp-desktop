@@ -89,6 +89,12 @@ const DEFAULT_STARTUP_TIMEOUT = 90_000;
 const DEFAULT_REQUEST_TIMEOUT = 120_000;
 /** Espera padrão por saída limpa antes de encerrar a árvore do OMP. */
 const CLOSE_GRACE_MS = 10_000;
+/**
+ * Limite para aguardar a identidade capturada no spawn. A captura usa
+ * PowerShell no Windows e pode demorar em runners frios; passado o limite, o
+ * encerramento cai no handle do processo (seguro) em vez de esperar.
+ */
+const IDENTITY_WAIT_MS = 2_000;
 const MAX_PHYSICAL_LINE = 64 * 1024 * 1024;
 const MAX_STDERR_TAIL = 8192;
 
@@ -624,7 +630,7 @@ export class OmpTransport {
 		const exited = this.exited ?? child.exited;
 		const ended = await waitForExit(exited, graceMs);
 		if (!ended) {
-			const identity = this.identity ? await this.identity : undefined;
+			const identity = await this.identityWithin();
 			const killed = identity ? await killProcessTree(identity) : false;
 			if (!killed) {
 				// Identidade indisponível/recusada: só o handle deste spawn é
@@ -639,5 +645,18 @@ export class OmpTransport {
 		}
 		this.closed = true;
 		this.rejectAll(new OmpTransportError("HOST_EXITED", "A sessão foi encerrada."));
+	}
+
+	/** Identidade pronta ou `undefined` se a captura passar do limite. */
+	private async identityWithin(): Promise<ProcessIdentity | undefined> {
+		if (!this.identity) return undefined;
+		const timeout = Promise.withResolvers<undefined>();
+		const timer = setTimeout(timeout.resolve, IDENTITY_WAIT_MS);
+		timer.unref?.();
+		try {
+			return await Promise.race([this.identity, timeout.promise]);
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 }

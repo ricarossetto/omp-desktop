@@ -122,6 +122,7 @@ export function createBuilderConfig(platform: "win32" | "linux"): Configuration 
 		extraResources: [
 			{ from: ".cache/bun/bun.exe", to: "bun/bun.exe" },
 			{ from: "resources/licenses", to: "licenses" },
+			{ from: "LICENSE", to: "licenses/LICENSE" },
 		],
 		win: {
 			target: [{ target: "nsis", arch: ["x64"] }],

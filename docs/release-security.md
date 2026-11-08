@@ -91,6 +91,10 @@ file hash.
 Linux packages are built from the same frozen source; their checksums are
 consolidated with the Windows installer into the global `SHA256SUMS`.
 
+The Windows payload includes the project's own MIT `LICENSE` at
+`resources/licenses/LICENSE`; the release gate verifies it byte-identical to the
+repository root `LICENSE`.
+
 The gate does not claim an audit with no findings. It confirms that the payload
 contains no real user credentials, tokens, or account data and that the public
 artifacts match the frozen source and the published `SHA256SUMS`.

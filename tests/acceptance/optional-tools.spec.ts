@@ -36,7 +36,10 @@ function isolatedEnvironment(): {
 		);
 	const root = mkdtempSync(path.join(tmpdir(), "omp-optional-ui-"));
 	const profile = path.join(root, "profile");
-	mkdirSync(profile, { recursive: true });
+	const appData = path.join(profile, "AppData", "Roaming");
+	const localAppData = path.join(profile, "AppData", "Local");
+	mkdirSync(appData, { recursive: true });
+	mkdirSync(localAppData, { recursive: true });
 	return {
 		root,
 		profile,
@@ -45,8 +48,8 @@ function isolatedEnvironment(): {
 			OMP_DESKTOP_BUN_PATH: bunPath,
 			USERPROFILE: profile,
 			HOME: profile,
-			APPDATA: path.join(profile, "AppData", "Roaming"),
-			LOCALAPPDATA: path.join(profile, "AppData", "Local"),
+			APPDATA: appData,
+			LOCALAPPDATA: localAppData,
 		},
 	};
 }
