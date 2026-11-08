@@ -95,6 +95,13 @@ The Windows payload includes the project's own MIT `LICENSE` at
 `resources/licenses/LICENSE`; the release gate verifies it byte-identical to the
 repository root `LICENSE`.
 
+On Windows, the process-tree guard signals a PID only after verifying its
+creation time. If the identity is unavailable or `taskkill /T` fails, the
+fallback uses the handle of the spawned child, not raw descendant PIDs;
+reparented children may survive in that exceptional failure. The installed
+smoke's "no pending processes" check covers only the exercised scenario, not a
+universal no-orphan guarantee.
+
 The gate does not claim an audit with no findings. It confirms that the payload
 contains no real user credentials, tokens, or account data and that the public
 artifacts match the frozen source and the published `SHA256SUMS`.
