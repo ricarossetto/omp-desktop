@@ -9,7 +9,7 @@
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Bun](https://img.shields.io/badge/Bun-1.4-000000?logo=bun&logoColor=white)
-![Versão](https://img.shields.io/badge/vers%C3%A3o-0.3.1-blue)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-0.5.0-blue)
 ![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
 ![Idiomas](https://img.shields.io/badge/idiomas-pt--BR%20%7C%20en--US%20%7C%20zh--CN-blue)
 
@@ -58,9 +58,9 @@ Na prática, o app é uma janela: o trabalho continua sendo feito pelo OMP que e
 
 ## Estado do release
 
-A versão atual é **0.3.1**, a versão final deste release. O release **v0.3.1** inclui **Windows x64 e Linux x86_64** no mesmo release. O release público anterior foi o [v0.3.0](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.0) (somente Windows x64).
+A versão atual é **0.5.0**. O release **v0.5.0** é **Windows x64** e traz `OMP-Desktop-0.5.0-setup.exe`. Os pacotes Linux x86_64 continuam no [release v0.3.1](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.1); o código 0.5.0 ainda gera esses pacotes. O release público anterior para Windows foi o [v0.3.1](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.1).
 
-O instalador Windows é por usuário, sem necessidade de administrador e **sem assinatura digital**. Os pacotes Linux também não são assinados. Não há atualização automática em nenhuma das plataformas: para atualizar, baixe ou gere o novo pacote e instale por cima. A v0.3.0 começou o ciclo público; a v0.3.1 é o release atual, ainda pré-1.0.
+O instalador Windows é por usuário, sem necessidade de administrador e **sem assinatura digital**. Os pacotes Linux (v0.3.1) também não são assinados. Não há atualização automática em nenhuma das plataformas: para atualizar, baixe ou gere o novo pacote e instale por cima. A v0.3.0 começou o ciclo público; a v0.5.0 é o release atual, ainda pré-1.0.
 
 ## Primeiro uso
 
@@ -78,12 +78,12 @@ Depois disso, abra uma pasta, crie uma sessão e converse. As configurações fi
 
 | Sistema | Pacote | Estado |
 | --- | --- | --- |
-| Windows 10/11 x64 | `OMP-Desktop-0.3.1-setup.exe` (NSIS, x64) | incluído na v0.3.1 |
-| Debian 12/13, Ubuntu 24.04/26.04 x86_64 | `OMP-Desktop-0.3.1-linux-amd64.deb` | incluído na v0.3.1 |
-| Linux x86_64 (TAR.GZ) | `OMP-Desktop-0.3.1-linux-x64.tar.gz` | incluído na v0.3.1 |
-| Arch Linux x86_64 | `omp-desktop-0.3.1-1-x86_64.pkg.tar.zst` (PKGBUILD) | incluído na v0.3.1 |
+| Windows 10/11 x64 | `OMP-Desktop-0.5.0-setup.exe` (NSIS, x64) | incluído na v0.5.0 |
+| Debian 12/13, Ubuntu 24.04/26.04 x86_64 | `OMP-Desktop-0.3.1-linux-amd64.deb` | release Linux mais recente (v0.3.1) |
+| Linux x86_64 (TAR.GZ) | `OMP-Desktop-0.3.1-linux-x64.tar.gz` | release Linux mais recente (v0.3.1) |
+| Arch Linux x86_64 | `omp-desktop-0.3.1-1-x86_64.pkg.tar.zst` (PKGBUILD) | release Linux mais recente (v0.3.1) |
 
-O release **v0.3.1** publica um único `SHA256SUMS` global cobrindo os quatro artefatos. O release anterior v0.3.0 continua disponível para Windows x64.
+O release **v0.5.0** publica o instalador Windows e um `SHA256SUMS` para ele. O release **v0.3.1** mantém o `SHA256SUMS` global que cobre os quatro artefatos 0.3.1.
 
 **Suporte de versão do OMP:** A baseline validada é 18.16.0, e o instalador assistido fixa exatamente 18.16.0. O host aceita OMP com major 18 ou maior; OMP 17 ou anterior é rejeitado como incompatível. Versões mais novas que a série 18.x são aceitas, mas marcadas como não validadas. A mesma regra vale para Windows e Linux.
 
@@ -94,7 +94,7 @@ O aplicativo **não inclui o executável do OMP**. Ele inclui o runtime Bun usad
 | Item | Detalhe |
 | --- | --- |
 | Sistema | Windows x64 (Windows 10 ou 11) |
-| Instalador | `OMP-Desktop-0.3.1-setup.exe` (NSIS, x64); o instalador anterior v0.3.0 mantém o nome 0.3.0 |
+| Instalador | `OMP-Desktop-0.5.0-setup.exe` (NSIS, x64); o instalador anterior v0.3.1 mantém o nome 0.3.1 |
 | Escopo | por usuário; não pede administrador |
 | Assinatura | não assinado; o SmartScreen pode avisar |
 | Bun | embutido em `resources/bun/bun.exe` |
@@ -103,7 +103,7 @@ O aplicativo **não inclui o executável do OMP**. Ele inclui o runtime Bun usad
 | Node.js | opcional; necessário apenas para projetos/MCP e o npm oficial; o app pode instalar o Node.js LTS atual sob demanda |
 | Atualização | manual; não há auto-update |
 
-1. Baixe o instalador no [release v0.3.1](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.1) (tag `v0.3.1`, `OMP-Desktop-0.3.1-setup.exe`). O instalador anterior v0.3.0 mantém o nome 0.3.0.
+1. Baixe o instalador no [release v0.5.0](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.5.0) (tag `v0.5.0`, `OMP-Desktop-0.5.0-setup.exe`). O instalador anterior v0.3.1 mantém o nome 0.3.1.
 2. Se o release publicar um SHA-256, confira o arquivo antes de executar (veja abaixo).
 3. Execute o instalador. Ele instala na pasta do usuário e não pede elevação.
 4. Abra o OMP Desktop. O assistente confere o ambiente; se o OMP não for encontrado, escolha **Install OMP**, ou aponte um `omp.exe` existente.
@@ -111,7 +111,7 @@ O aplicativo **não inclui o executável do OMP**. Ele inclui o runtime Bun usad
 
 ### Linux (x86_64)
 
-Os pacotes Linux são gerados a partir deste código e estão incluídos no release **v0.3.1** junto com o Windows. O v0.3.0 era somente Windows. O projeto não publica pacote AUR, PPA, AppImage nem canal de atualização automática. Os alvos planejados são Debian 12 e 13, Ubuntu 24.04 e 26.04 e Arch Linux atual, todos x86_64 com glibc; ARM e macOS ficam fora do escopo.
+Os pacotes Linux são gerados a partir deste código e estão incluídos no release **v0.3.1** junto com o Windows. O v0.3.0 era somente Windows. O release **v0.5.0** é somente Windows; os pacotes Linux continuam na v0.3.1 até a publicação de um build Linux. O projeto não publica pacote AUR, PPA, AppImage nem canal de atualização automática. Os alvos planejados são Debian 12 e 13, Ubuntu 24.04 e 26.04 e Arch Linux atual, todos x86_64 com glibc; ARM e macOS ficam fora do escopo.
 
 | Item | Detalhe |
 | --- | --- |
@@ -230,10 +230,10 @@ O renderer não pode fornecer URL, versão, comando nem pasta: fontes, versões,
 - Se o release publicar um SHA-256, compare com o resultado de:
 
 ```powershell
-Get-FileHash .\OMP-Desktop-0.3.1-setup.exe -Algorithm SHA256
+Get-FileHash .\OMP-Desktop-0.5.0-setup.exe -Algorithm SHA256
 ```
 
-O instalador anterior v0.3.0 mantém o nome 0.3.0. Se o hash não corresponder, não execute o arquivo.
+O instalador anterior v0.3.1 mantém o nome 0.3.1. Se o hash não corresponder, não execute o arquivo.
 
 **Linux.** O `.deb` e o pacote do Arch não são assinados. Gere-os a partir deste código ou obtenha-os de uma origem confiável e confira `release/SHA256SUMS` antes de instalar:
 
@@ -258,6 +258,7 @@ Nas duas plataformas, **não apague `~/.omp` só para desinstalar o app desktop*
 
 - Abra qualquer pasta como projeto; os recentes ficam salvos. Pasta ausente aparece como indisponível e pode ser relocalizada. Remover um recente nunca apaga arquivos.
 - A lista de sessões vem do próprio OMP, sem criar uma cópia paralela do histórico.
+- Uma barra de abas horizontal mostra as sessões abertas. Arraste para reordenar, feche com confirmação, veja o indicador de trabalho e o ponto do projeto, e crie uma sessão com **+** ou `Ctrl+T`. A barra pode ficar na barra superior ou na lateral (**Configurações → Aparência**); `Ctrl+W` fecha a aba atual e `Alt+↑`/`Alt+↓` alternam entre abas.
 - **Uma sessão ativa = um processo OMP próprio**, no diretório do projeto. Trocar de aba não interrompe um agente que está trabalhando.
 - Sessão em uso por outro processo não é tomada à força: o app avisa e oferece abrir outra.
 - Ao reabrir o aplicativo, as abas voltam com a mesma conversa. **Nenhum prompt é reenviado**, nem depois de uma queda.
@@ -275,6 +276,8 @@ Nas duas plataformas, **não apague `~/.omp` só para desinstalar o app desktop*
 - Exportação da conversa em HTML pela paleta de comandos.
 - No compositor, `/` abre os comandos que o OMP anuncia; skills, MCP e extensões continuam sendo executados pelo OMP. A paleta (`Ctrl+K`) tem um modo geral e um modo restrito a skills/MCP.
 - Anexos por botão, arrastar e colar imagem. Arquivos de texto entram como bloco delimitado com nome e conteúdo; PDFs e binários viram referência de arquivo, não conteúdo enviado ao modelo. O limite é de **600 KiB por anexo**, porque o prompt inteiro precisa caber em um frame do OMP; o limite do frame é checado antes do envio e nada é truncado silenciosamente.
+- **Histórico de prompts:** `↑`/`↓` no compositor vazio recupera prompts anteriores; `Ctrl+↑` abre a busca.
+- Clique em uma imagem para abri-la em um lightbox. Links de arquivo abrem um preview no app (texto ou imagem raster) com **Abrir externamente**; o preview não executa conteúdo.
 
 ### Runners, tarefas e objetivo
 
@@ -285,6 +288,7 @@ Nas duas plataformas, **não apague `~/.omp` só para desinstalar o app desktop*
 
 ### Aprovações
 
+- **Modos de aprovação de ferramentas:** `always-ask`, `always-ask-cached`, `write` (padrão) e `yolo`, global ou por projeto. Trocar o modo reinicia a sessão com `--resume`; se a sessão estiver ocupada, o modo vale quando o turno atual terminar. O app nunca aprova sozinho: `yolo` é uma escolha explícita e a interface avisa sobre ela.
 - `select`, `confirm`, `input` (com máscara e opção de revelar), `editor` e `ask` com várias perguntas, multisseleção e resposta livre.
 - **O aplicativo nunca aprova nada sozinho.** Detalhes, alvo e comando ficam visíveis antes da decisão.
 - Cada pedido é respondido uma única vez; cancelar ou deixar o prazo vencer não vira aprovação. Quando o OMP tem timeout próprio para `ask`, a interface avisa que ele pode seguir com as opções recomendadas.
@@ -309,6 +313,7 @@ Nas duas plataformas, **não apague `~/.omp` só para desinstalar o app desktop*
 - Status do repositório com renomeações, não rastreados, binários, nomes com Unicode e espaços, e repositório sem commits.
 - Diff **working** e **index** no editor Monaco, local e sem CDN.
 - Stage e unstage por arquivo sem tocar na árvore de trabalho. Commit só com mensagem digitada e clique; falha de hook é exibida e os arquivos ficam intactos.
+- **Histórico recente de commits** no painel Alterações: hash, assunto, autor e data; somente leitura.
 - Não há `push`, `reset`, `clean` ou descarte automático. Fora de um repositório, o painel explica e não roda `git init`.
 - O Git é opcional. Se estiver ausente, o painel explica a ausência; a ação opcional fica no Diagnóstico e em **Configurações → Geral** (no Linux ela mostra o comando do gerenciador de pacotes). Nenhum repositório é simulado.
 
@@ -318,9 +323,10 @@ Nas duas plataformas, **não apague `~/.omp` só para desinstalar o app desktop*
 
 ### Interface, tema e idiomas
 
-- Tema escuro, claro ou seguir o tema do sistema (o rótulo ainda menciona Windows nesta versão); painéis redimensionáveis e persistidos.
+- Temas **aurora**, **phosphor** e **daylight**, além de escuro, claro e seguir o sistema; cor de acento personalizada; densidade **confortável** ou **compacta**; escala da interface; movimento reduzido (sistema/ligado/desligado); largura da conversa (focada/confortável/ampla); painéis redimensionáveis e persistidos.
+- Configurações com navegação lateral: **Geral**, **Aparência**, **Modelos**, **Contas**, **Aprovações**, **Atalhos** e **Sobre**. Sobre mostra a versão do app, a versão do OMP, o Bun, a plataforma, o estado de assinatura e a licença.
 - Abaixo de 1000 px, a barra lateral e o painel direito viram gavetas; a conversa nunca fica espremida.
-- Foco visível, navegação por teclado, rótulos acessíveis e respeito a `prefers-reduced-motion`.
+- Foco visível, navegação por teclado, rótulos acessíveis e respeito a `prefers-reduced-motion` e à configuração de movimento reduzido do app.
 - Português (Brasil), English (US) e 简体中文. O aplicativo segue o idioma do sistema na primeira execução; a escolha fica em **Configurações → Geral → Idioma**. Identificadores, comandos, caminhos e nomes de modelo não são traduzidos.
 
 ### Acessibilidade e qualidade
@@ -335,9 +341,15 @@ A interface foi construída com foco visível, navegação por teclado, rótulos
 | `Ctrl+M` | Seletor de modelo e raciocínio |
 | `Ctrl+Shift+P` | Abrir projeto |
 | `Ctrl+N` | Nova sessão |
+| `Ctrl+T` | Nova sessão (igual a `Ctrl+N`) |
+| `Ctrl+W` | Fechar a aba atual (confirmação quando a sessão está ocupada) |
+| `Ctrl+,` | Abrir configurações |
 | `Ctrl+B` | Alternar barra lateral |
+| `Alt+↑` / `Alt+↓` | Aba anterior/próxima |
 | ``Ctrl+` `` | Abrir ou fechar o terminal |
 | `Alt+←` / `Alt+→` | Voltar/avançar no histórico de sessões |
+| `↑` / `↓` | Recuperar o prompt anterior/próximo no compositor vazio |
+| `Ctrl+↑` | Abrir o histórico de prompts |
 | `Esc` | Fecha paleta, seletor de modelo ou configurações; com uma aprovação aberta, cancela o pedido (nunca aprova); sem nada aberto e fora de um campo de texto, interrompe o agente |
 | `Ctrl+Enter` | Envia no editor de diálogo (Enter quebra linha) |
 | `Enter` / `Shift+Enter` | Envia / quebra linha no compositor |
@@ -487,16 +499,16 @@ A auditoria de dependências e o processo de release estão descritos em [`relea
 
 ## Limitações conhecidas
 
-- **Plataformas: Windows x64 e Linux x86_64.** O escopo do Linux é Debian 12/13, Ubuntu 24.04/26.04 e Arch Linux atual. Não há builds ARM, macOS, AppImage, AUR ou PPA. O release v0.3.1 inclui Linux no mesmo release que o Windows; o v0.3.0 era somente Windows.
+- **Plataformas: Windows x64 e Linux x86_64.** O escopo do Linux é Debian 12/13, Ubuntu 24.04/26.04 e Arch Linux atual. Não há builds ARM, macOS, AppImage, AUR ou PPA. O release v0.3.1 inclui Linux no mesmo release que o Windows; o v0.3.0 era somente Windows. O release v0.5.0 é somente Windows; os pacotes Linux continuam na v0.3.1.
 - **Sem atualização automática.** Gere ou baixe o novo pacote e instale por cima.
 - **OMP não incluído.** O assistente da primeira execução pode instalar o binário oficial fixado em 18.16.0 para a plataforma atual depois de um clique explícito, mas não atualiza o OMP em silêncio; é necessário um executável do OMP compatível (major 18 ou maior; validado em 18.16.0).
-- **Sem seletor de modo de permissão próprio.** O app mostra as aprovações que o OMP envia e não inventa níveis de permissão que o RPC não anuncia.
+- **Os modos de aprovação são explícitos.** O app oferece `always-ask`, `always-ask-cached`, `write` (padrão) e `yolo`, global ou por projeto; `yolo` é uma escolha explícita e a interface avisa sobre ela. O app continua mostrando as aprovações que o OMP envia.
 - **Git e Node.js LTS são opcionais e não incluídos.** No Windows o app pode instalar os dois sob demanda; no Linux ele pode instalar o Node.js e mostra o comando do Git para o gerenciador de pacotes. Nenhum é atualizado em silêncio; uma instalação global compatível é detectada e usada como está.
 - **Git sem `push`, `reset`, `clean` ou descarte.** O painel cobre status, diff, stage, unstage e commit.
 - **Pacotes não assinados.** O instalador do Windows pode acionar o SmartScreen; os pacotes Linux também não são assinados. Não há certificado de code signing nesta versão.
 - **Anexos limitados a 600 KiB por arquivo** e ao frame padrão de 1 MB do OMP. O histórico não é mais limitado a 8 MiB pelo desktop, mas continua sujeito ao limite de frame do transporte do OMP (1 MB padrão; linhas JSONL do host até 64 MiB).
 - **Sem declaração de conformidade WCAG** e sem teste documentado com leitores de tela ou pessoas usuárias. As verificações automatizadas têm limites.
-- **A v0.3.0 foi a primeira versão pública; a v0.3.1 é o release atual.** Algumas arestas são esperadas, e não é 1.0.
+- **A v0.3.0 foi a primeira versão pública; a v0.5.0 é o release atual.** Algumas arestas são esperadas, e não é 1.0.
 
 ## Contribuição
 
