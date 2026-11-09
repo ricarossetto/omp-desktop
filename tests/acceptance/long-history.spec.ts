@@ -7,6 +7,16 @@ import { buildEntries, launch, quit, type Launched } from "./helpers";
 
 mkdirSync("test-results", { recursive: true });
 
+async function captureWindow(l: Launched, path: string): Promise<void> {
+	const image = await l.app.evaluate(async ({ BrowserWindow }) => {
+		const win = BrowserWindow.getAllWindows()[0];
+		if (!win) throw new Error("janela ausente");
+		const img = await win.webContents.capturePage();
+		return img.toPNG().toString("base64");
+	});
+	writeFileSync(path, Buffer.from(image, "base64"));
+}
+
 test("histórico longo não gera loop de renderização (React #185)", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "omp-long-loop-"));
 	const file = join(dir, "entries.json");
@@ -747,7 +757,7 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		await scrollLog(l.page, "bottom");
 		const lastText = l.page.locator(".message--assistant .message__body", { hasText: fixture.lastMarker });
 		await expect(lastText).toHaveCount(1);
-		await l.page.screenshot({ path: "test-results/history-complete-bottom.png" });
+		await captureWindow(l, "test-results/history-complete-bottom.png");
 
 		// Ferramenta perto do fim: args/result/details completos no DOM.
 		if (!initial.toolKey) throw new Error("chave da mensagem da ferramenta ausente");
@@ -790,12 +800,12 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		await expect(middleSlot).toHaveCount(1);
 		await expect(middleSlot).toContainText(fixture.middleMarker);
 		await expect(middleSlot).toContainText(fixture.middleTail);
-		await l.page.screenshot({ path: "test-results/history-complete-middle.png" });
+		await captureWindow(l, "test-results/history-complete-middle.png");
 
 		await scrollLog(l.page, "top");
 		const firstText = l.page.locator(".message--user .message__user-text", { hasText: fixture.firstMarker });
 		await expect(firstText).toHaveCount(1);
-		await l.page.screenshot({ path: "test-results/history-complete-top.png" });
+		await captureWindow(l, "test-results/history-complete-top.png");
 		expect(await l.page.locator("body").innerText()).not.toContain(OMITTED_TEXT);
 
 		// --- Reload do renderer: o host continua vivo e o snapshot é reaplicado.
@@ -827,7 +837,7 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		expect(reloaded.markerCounts.omitted).toBe(0);
 		await scrollLog(l.page, "bottom");
 		await expect(l.page.locator(".message--assistant .message__body", { hasText: fixture.lastMarker })).toHaveCount(1);
-		await l.page.screenshot({ path: "test-results/history-complete-reload-bottom.png" });
+		await captureWindow(l, "test-results/history-complete-reload-bottom.png");
 		await scrollLog(l.page, "top");
 		await expect(l.page.locator(".message--user .message__user-text", { hasText: fixture.firstMarker })).toHaveCount(1);
 
@@ -900,7 +910,7 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 			await liveCard.locator("summary.tool-card__header").click();
 		}
 		await expect(liveCard.locator(".tool-card__output pre")).toContainText("runner-ok");
-		await l.page.screenshot({ path: "test-results/history-complete-sync-bottom.png" });
+		await captureWindow(l, "test-results/history-complete-sync-bottom.png");
 		await scrollLog(l.page, "top");
 		await expect(l.page.locator(".message--user .message__user-text", { hasText: fixture.firstMarker })).toHaveCount(1);
 		expect(l.errors.filter((error) => /185|Maximum update depth/.test(error))).toEqual([]);
