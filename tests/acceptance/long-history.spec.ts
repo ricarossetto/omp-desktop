@@ -757,7 +757,6 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		await scrollLog(l.page, "bottom");
 		const lastText = l.page.locator(".message--assistant .message__body", { hasText: fixture.lastMarker });
 		await expect(lastText).toHaveCount(1);
-		await captureWindow(l, "test-results/history-complete-bottom.png");
 
 		// Ferramenta perto do fim: args/result/details completos no DOM.
 		if (!initial.toolKey) throw new Error("chave da mensagem da ferramenta ausente");
