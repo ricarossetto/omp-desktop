@@ -2,19 +2,169 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import sharp from "sharp";
 import { isRecord } from "../../src/shared/session-state";
 import { buildEntries, launch, quit, type Launched } from "./helpers";
 
 mkdirSync("test-results", { recursive: true });
 
-async function captureWindow(l: Launched, path: string): Promise<void> {
-	const image = await l.app.evaluate(async ({ BrowserWindow }) => {
-		const win = BrowserWindow.getAllWindows()[0];
-		if (!win) throw new Error("janela ausente");
-		const img = await win.webContents.capturePage();
-		return img.toPNG().toString("base64");
-	});
-	writeFileSync(path, Buffer.from(image, "base64"));
+interface MarkerGeometry {
+	found: boolean;
+	key: string;
+	marker: string;
+	textLength: number;
+	rect: { top: number; bottom: number; left: number; right: number; height: number; width: number } | null;
+	container: { top: number; bottom: number; left: number; right: number; height: number; width: number } | null;
+	relativeTop: number | null;
+	intersects: boolean;
+	intersectionHeight: number;
+	fullyVisible: boolean;
+	scrollTop: number;
+	scrollHeight: number;
+	clientHeight: number;
+	viewportWidth: number;
+	viewportHeight: number;
+	dpr: number;
+}
+
+interface CaptureMetrics {
+	phase: string;
+	geometry: MarkerGeometry;
+	lastMarkerGeometry?: MarkerGeometry;
+}
+
+/**
+ * Captura o frame realmente apresentado, não o último framebuffer arbitrario.
+ * O salto de scrollTop para o topo pinta um frame intermediario (o spacer
+ * antigo) antes do commit do React; capturePage pode devolver esse frame. A
+ * assinatura de apresentação entrega os frames pintados e o último deles já
+ * contém o DOM comitado. Sem frames (página parada), capturePage é seguro.
+ */
+async function captureWindow(l: Launched, path: string, metrics: CaptureMetrics): Promise<void> {
+	const pageUrl = l.page.url();
+	const result = await l.app.evaluate(
+		async ({ BrowserWindow }, { pageUrl }) => {
+			const windows = BrowserWindow.getAllWindows().filter((candidate) => !candidate.isDestroyed());
+			const win =
+				windows.find((candidate) => candidate.webContents.getURL() === pageUrl) ??
+				windows.find((candidate) => candidate.webContents.getURL().includes("index.html")) ??
+				windows[0];
+			if (!win) throw new Error("janela ausente");
+			const wc = win.webContents;
+			const holder = globalThis as unknown as {
+				__captureFrames?: number;
+				__capturePng?: string | null;
+				__captureAt?: number | null;
+				__captureEnded?: boolean;
+			};
+			holder.__captureFrames = 0;
+			holder.__capturePng = null;
+			holder.__captureAt = null;
+			holder.__captureEnded = false;
+			const started = Date.now();
+			const stop = () => {
+				if (holder.__captureEnded) return;
+				holder.__captureEnded = true;
+				try {
+					wc.endFrameSubscription();
+				} catch {
+					/* assinatura já encerrada */
+				}
+			};
+			const callback = (image: { toPNG(): Buffer }) => {
+				holder.__captureFrames = (holder.__captureFrames ?? 0) + 1;
+				holder.__capturePng = image.toPNG().toString("base64");
+				holder.__captureAt = Date.now();
+				if ((holder.__captureFrames ?? 0) >= 2) stop();
+			};
+			try {
+				wc.beginFrameSubscription(false, callback);
+			} catch {
+				holder.__captureEnded = true;
+			}
+			while (!holder.__captureEnded && (holder.__captureFrames ?? 0) < 2 && Date.now() - started < 1000) {
+				await new Promise<void>((resolve) => setTimeout(resolve, 10));
+			}
+			stop();
+			const framePng = holder.__capturePng;
+			const png = framePng ?? (await wc.capturePage()).toPNG().toString("base64");
+			return {
+				png,
+				source: framePng ? "frame" : "capturePage",
+				frames: holder.__captureFrames ?? 0,
+				waitedMs: Date.now() - started,
+				frameAt: holder.__captureAt ?? null,
+				windowId: wc.id,
+				windowUrl: wc.getURL(),
+			};
+		},
+		{ pageUrl },
+	);
+	writeFileSync(path, Buffer.from(result.png, "base64"));
+	const paintedPixels = await countMarkerPixels(path, metrics.geometry);
+	writeFileSync(
+		path.replace(/\.png$/, ".json"),
+		JSON.stringify({ ...metrics, ...result, paintedPixels, png: undefined, capturedAt: Date.now() }, null, 2),
+	);
+	expect(paintedPixels, `PNG sem pixels do marcador ${metrics.geometry.marker} em ${path}`).toBeGreaterThan(0);
+}
+
+/**
+ * Prova que o PNG contém o texto do marcador no rect do Range, não só o slot.
+ * Usa o frame pós-paint e o rect CSS escalado para o PNG (dpr). Conta pixels
+ * diferentes da cor dominante do recorte; um frame stale/fora da viewport dá 0.
+ */
+async function countMarkerPixels(path: string, geometry: MarkerGeometry): Promise<number> {
+	if (!geometry.rect || geometry.viewportWidth <= 0) return 0;
+	if (
+		geometry.rect.left < 0 ||
+		geometry.rect.top < 0 ||
+		geometry.rect.right > geometry.viewportWidth ||
+		geometry.rect.bottom > geometry.viewportHeight
+	) {
+		return 0;
+	}
+	const meta = await sharp(path).metadata();
+	const imageWidth = meta.width ?? 0;
+	const imageHeight = meta.height ?? 0;
+	if (imageWidth <= 0 || imageHeight <= 0) return 0;
+	const scale = imageWidth / geometry.viewportWidth;
+	const left = Math.max(0, Math.min(imageWidth - 1, Math.round(geometry.rect.left * scale)));
+	const top = Math.max(0, Math.min(imageHeight - 1, Math.round(geometry.rect.top * scale)));
+	const width = Math.max(1, Math.min(imageWidth - left, Math.round(geometry.rect.width * scale)));
+	const height = Math.max(1, Math.min(imageHeight - top, Math.round(geometry.rect.height * scale)));
+	const { data, info } = await sharp(path)
+		.extract({ left, top, width, height })
+		.removeAlpha()
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+	const channels = info.channels;
+	const colors: Array<[number, number, number]> = [];
+	const counts = new Map<number, number>();
+	for (let index = 0; index < data.length; index += channels) {
+		const r = data[index] ?? 0;
+		const g = channels >= 3 ? (data[index + 1] ?? 0) : r;
+		const b = channels >= 3 ? (data[index + 2] ?? 0) : r;
+		colors.push([r, g, b]);
+		const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	let modeKey = 0;
+	let modeCount = -1;
+	for (const [key, count] of counts) {
+		if (count > modeCount) {
+			modeKey = key;
+			modeCount = count;
+		}
+	}
+	const modeR = ((modeKey >> 8) & 0xf) * 17;
+	const modeG = ((modeKey >> 4) & 0xf) * 17;
+	const modeB = (modeKey & 0xf) * 17;
+	let painted = 0;
+	for (const [r, g, b] of colors) {
+		if (Math.abs(r - modeR) + Math.abs(g - modeG) + Math.abs(b - modeB) > 48) painted += 1;
+	}
+	return painted;
 }
 
 test("histórico longo não gera loop de renderização (React #185)", async () => {
@@ -600,7 +750,149 @@ async function scrollLog(page: Page, position: "top" | "bottom"): Promise<void> 
 	}, position);
 }
 
-async function scrollToMessage(page: Page, targetKey: string, targetIndex: number): Promise<void> {
+async function markerGeometry(page: Page, key: string, marker: string): Promise<MarkerGeometry> {
+	return page.evaluate(
+		({ key, marker }) => {
+			const log = document.querySelector<HTMLElement>('[aria-label="Histórico da conversa"]');
+			if (!log) {
+				return {
+					found: false,
+					key,
+					marker,
+					textLength: 0,
+					rect: null,
+					container: null,
+					relativeTop: null,
+					intersects: false,
+					intersectionHeight: 0,
+					fullyVisible: false,
+					scrollTop: 0,
+					scrollHeight: 0,
+					clientHeight: 0,
+					viewportWidth: 0,
+					viewportHeight: 0,
+					dpr: 1,
+				};
+			}
+			const lr = log.getBoundingClientRect();
+			const container = { top: lr.top, bottom: lr.bottom, left: lr.left, right: lr.right, height: lr.height, width: lr.width };
+			const base = {
+				found: false,
+				key,
+				marker,
+				textLength: 0,
+				rect: null,
+				container,
+				relativeTop: null,
+				intersects: false,
+				intersectionHeight: 0,
+				fullyVisible: false,
+				scrollTop: log.scrollTop,
+				scrollHeight: log.scrollHeight,
+				clientHeight: log.clientHeight,
+				viewportWidth: innerWidth,
+				viewportHeight: innerHeight,
+				dpr: devicePixelRatio,
+			};
+			const slot = log.querySelector<HTMLElement>(`[data-msg-key="${key}"]`);
+			if (!slot) return base;
+			const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
+			const nodes: Text[] = [];
+			let combined = "";
+			while (walker.nextNode()) {
+				const node = walker.currentNode as Text;
+				nodes.push(node);
+				combined += node.nodeValue ?? "";
+			}
+			const at = combined.indexOf(marker);
+			if (at < 0) return { ...base, textLength: combined.length };
+			const locate = (offset: number): { node: Text; offset: number } | null => {
+				let remaining = offset;
+				for (const node of nodes) {
+					const length = node.nodeValue?.length ?? 0;
+					if (remaining <= length) return { node, offset: remaining };
+					remaining -= length;
+				}
+				return null;
+			};
+			const start = locate(at);
+			const end = locate(at + marker.length);
+			if (!start || !end) return { ...base, textLength: combined.length };
+			const range = document.createRange();
+			range.setStart(start.node, start.offset);
+			range.setEnd(end.node, end.offset);
+			const rect = range.getBoundingClientRect();
+			const intersectionHeight = Math.max(0, Math.min(rect.bottom, lr.bottom) - Math.max(rect.top, lr.top));
+			return {
+				found: true,
+				key,
+				marker,
+				textLength: combined.length,
+				rect: { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, height: rect.height, width: rect.width },
+				container,
+				relativeTop: rect.top - lr.top + log.scrollTop,
+				intersects: rect.bottom > lr.top && rect.top < lr.bottom,
+				intersectionHeight,
+				fullyVisible: rect.top >= lr.top - 1 && rect.bottom <= lr.bottom + 1,
+				scrollTop: log.scrollTop,
+				scrollHeight: log.scrollHeight,
+				clientHeight: log.clientHeight,
+				viewportWidth: innerWidth,
+				viewportHeight: innerHeight,
+				dpr: devicePixelRatio,
+			};
+		},
+		{ key, marker },
+	);
+}
+
+/**
+ * Garante que o texto do marcador (Range, não o slot inteiro) esteja
+ * integralmente dentro da viewport do histórico. Um slot de 30.000px pode
+ * intersectar a viewport por um trecho que não contém o marcador.
+ */
+async function ensureMarkerVisible(page: Page, key: string, marker: string): Promise<MarkerGeometry> {
+	let last: MarkerGeometry | undefined;
+	for (let attempt = 0; attempt < 12; attempt++) {
+		last = await markerGeometry(page, key, marker);
+		if (last.found && last.fullyVisible) return last;
+		if (!last.found) {
+			await page.waitForFunction(
+				({ key }) => document.querySelector(`[data-msg-key="${key}"]`) !== null,
+				{ key },
+				{ timeout: 10_000 },
+			);
+			continue;
+		}
+		const target = Math.max(0, (last.relativeTop ?? 0) - last.clientHeight * 0.25);
+		await page.evaluate(
+			({ target }) => {
+				const log = document.querySelector<HTMLElement>('[aria-label="Histórico da conversa"]');
+				if (!log) throw new Error("histórico ausente");
+				log.scrollTop = Math.max(0, Math.min(log.scrollHeight, target));
+				log.dispatchEvent(new Event("scroll", { bubbles: true }));
+			},
+			{ target },
+		);
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) => {
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+				}),
+		);
+	}
+	if (!last || !last.found || !last.fullyVisible) {
+		throw new Error(`marcador ${marker} não ficou visível em ${key}: ${JSON.stringify(last)}`);
+	}
+	return last;
+}
+
+async function scrollToMessage(
+	page: Page,
+	targetKey: string,
+	targetIndex: number,
+	marker?: string,
+): Promise<MarkerGeometry | null> {
 	// Varredura determinística pela janela renderizada, do topo para baixo.
 	// Cada passo avança até o fim da última mensagem renderizada (com overlap),
 	// então não depende de média de altura nem de scrollHeight estável.
@@ -647,7 +939,7 @@ async function scrollToMessage(page: Page, targetKey: string, targetIndex: numbe
 			},
 			{ targetKey },
 		);
-		if (state.found) return;
+		if (state.found) return marker ? ensureMarkerVisible(page, targetKey, marker) : null;
 		if (!state.first || !state.last) break;
 		const next =
 			targetIndex > state.last.index
@@ -757,10 +1049,13 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		await scrollLog(l.page, "bottom");
 		const lastText = l.page.locator(".message--assistant .message__body", { hasText: fixture.lastMarker });
 		await expect(lastText).toHaveCount(1);
+		const bottomGeometry = await ensureMarkerVisible(l.page, initial.keys[initial.keys.length - 1], fixture.lastMarker);
+		expect(bottomGeometry.fullyVisible).toBe(true);
+		await captureWindow(l, "test-results/history-complete-bottom.png", { phase: "bottom", geometry: bottomGeometry });
 
 		// Ferramenta perto do fim: args/result/details completos no DOM.
 		if (!initial.toolKey) throw new Error("chave da mensagem da ferramenta ausente");
-		await scrollToMessage(l.page, initial.toolKey, TOOL_INDEX);
+		await scrollToMessage(l.page, initial.toolKey, TOOL_INDEX, `arquivo-unicode-${fixture.run}.txt`);
 		const card = l.page.locator("details.tool-card").filter({ hasText: `arquivo-unicode-${fixture.run}.txt` });
 		await expect(card).toHaveCount(1);
 		const cardOpen = await card.evaluate((element) => (element as HTMLDetailsElement).open);
@@ -794,17 +1089,22 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 
 		// Mensagem pesada do meio: o texto inteiro (inclusive o fim) está no DOM.
 		if (!initial.targetKey) throw new Error("chave da mensagem do meio ausente");
-		await scrollToMessage(l.page, initial.targetKey, MIDDLE_INDEX);
+		const middleGeometry = await scrollToMessage(l.page, initial.targetKey, MIDDLE_INDEX, fixture.middleMarker);
+		if (!middleGeometry) throw new Error("geometria do marcador do meio ausente");
 		const middleSlot = l.page.locator(`[data-msg-key="${initial.targetKey}"]`);
 		await expect(middleSlot).toHaveCount(1);
 		await expect(middleSlot).toContainText(fixture.middleMarker);
 		await expect(middleSlot).toContainText(fixture.middleTail);
-		await captureWindow(l, "test-results/history-complete-middle.png");
+		expect(middleGeometry.fullyVisible).toBe(true);
+		await captureWindow(l, "test-results/history-complete-middle.png", { phase: "middle", geometry: middleGeometry });
 
 		await scrollLog(l.page, "top");
 		const firstText = l.page.locator(".message--user .message__user-text", { hasText: fixture.firstMarker });
 		await expect(firstText).toHaveCount(1);
-		await captureWindow(l, "test-results/history-complete-top.png");
+		const firstGeometry = await ensureMarkerVisible(l.page, initial.keys[0], fixture.firstMarker);
+		expect(firstGeometry.scrollTop).toBe(0);
+		expect(firstGeometry.fullyVisible).toBe(true);
+		await captureWindow(l, "test-results/history-complete-top.png", { phase: "top", geometry: firstGeometry });
 		expect(await l.page.locator("body").innerText()).not.toContain(OMITTED_TEXT);
 
 		// --- Reload do renderer: o host continua vivo e o snapshot é reaplicado.
@@ -836,9 +1136,13 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		expect(reloaded.markerCounts.omitted).toBe(0);
 		await scrollLog(l.page, "bottom");
 		await expect(l.page.locator(".message--assistant .message__body", { hasText: fixture.lastMarker })).toHaveCount(1);
-		await captureWindow(l, "test-results/history-complete-reload-bottom.png");
+		const reloadLastGeometry = await ensureMarkerVisible(l.page, reloaded.keys[reloaded.keys.length - 1], fixture.lastMarker);
+		expect(reloadLastGeometry.fullyVisible).toBe(true);
+		await captureWindow(l, "test-results/history-complete-reload-bottom.png", { phase: "reload-bottom", geometry: reloadLastGeometry });
 		await scrollLog(l.page, "top");
 		await expect(l.page.locator(".message--user .message__user-text", { hasText: fixture.firstMarker })).toHaveCount(1);
+		const reloadFirstGeometry = await ensureMarkerVisible(l.page, reloaded.keys[0], fixture.firstMarker);
+		expect(reloadFirstGeometry.fullyVisible).toBe(true);
 
 		// --- Sync pós-settle: get_entries devolve fixture + mensagens vivas ---
 		// Volta ao fundo para a lista acompanhar as mensagens vivas.
@@ -903,15 +1207,29 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		await expect(l.page.locator(".message--user .message__user-text", { hasText: fixture.promptText })).toHaveCount(1);
 		await expect(l.page.locator(".message--assistant .message__body", { hasText: "Verificado." })).toHaveCount(1);
 		await expect(l.page.locator(".message--assistant .message__body", { hasText: fixture.lastMarker })).toHaveCount(1);
+		// O sync prova o card vivo; o último marcador já foi provado fullyVisible
+		// no bottom e no reload-bottom. Aqui a interseção registra o contexto.
+		const syncLastGeometry = await markerGeometry(l.page, synced.keys[TOTAL - 1], fixture.lastMarker);
+		expect(syncLastGeometry.intersects).toBe(true);
 		const liveCard = l.page.locator("details.tool-card").filter({ hasText: "smoke-omp.txt" });
 		await expect(liveCard).toHaveCount(1);
 		if (!(await liveCard.evaluate((element) => (element as HTMLDetailsElement).open))) {
 			await liveCard.locator("summary.tool-card__header").click();
 		}
 		await expect(liveCard.locator(".tool-card__output pre")).toContainText("runner-ok");
-		await captureWindow(l, "test-results/history-complete-sync-bottom.png");
+		const liveKey = await liveCard.evaluate((element) => element.closest("[data-msg-key]")?.getAttribute("data-msg-key") ?? "");
+		if (!liveKey) throw new Error("chave do card vivo ausente");
+		const syncGeometry = await ensureMarkerVisible(l.page, liveKey, "smoke-omp.txt");
+		expect(syncGeometry.fullyVisible).toBe(true);
+		await captureWindow(l, "test-results/history-complete-sync-bottom.png", {
+			phase: "sync-bottom",
+			geometry: syncGeometry,
+			lastMarkerGeometry: syncLastGeometry,
+		});
 		await scrollLog(l.page, "top");
 		await expect(l.page.locator(".message--user .message__user-text", { hasText: fixture.firstMarker })).toHaveCount(1);
+		const syncFirstGeometry = await ensureMarkerVisible(l.page, synced.keys[0], fixture.firstMarker);
+		expect(syncFirstGeometry.fullyVisible).toBe(true);
 		expect(l.errors.filter((error) => /185|Maximum update depth/.test(error))).toEqual([]);
 	} finally {
 		if (l) await quit(l);
