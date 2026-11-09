@@ -50,7 +50,12 @@ export function ConversationView({ view }: { view: SessionViewState }) {
 	const hasBackgroundWork = view.meta?.isSettled === true && view.meta?.hasPendingAsyncWork === true;
 
 	return (
-		<section className="conversation" aria-label={t("shell.conversation")}>
+		<section
+			id="omp-conversation-panel"
+			role="tabpanel"
+			className="conversation"
+			aria-label={t("shell.conversation")}
+		>
 			<div className="conversation__notices">
 				{view.status === "starting" ? (
 					<Banner level="info" title={t("conversation.startingTitle")}>

@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { DEPENDENCY_KINDS } from "./dependency-install-types";
+import { APPROVAL_MODES } from "./session-types";
 import type { DependencyRuntimeSnapshot } from "./dependency-install-types";
 
 export type {
@@ -122,6 +123,7 @@ export type UiResponse = z.infer<typeof uiResponseSchema>;
 
 const workspaceId = z.string().min(1);
 const sessionId = z.string().min(1);
+const approvalModeSchema = z.enum(APPROVAL_MODES);
 const relPath = z.string().min(1).max(4096);
 
 export const desktopRequestSchema = z.discriminatedUnion("op", [
@@ -134,14 +136,23 @@ export const desktopRequestSchema = z.discriminatedUnion("op", [
 	z.object({ op: z.literal("runtime.openExternal"), url: z.string().url() }),
 	z.object({ op: z.literal("ui.getState") }),
 	z.object({ op: z.literal("ui.setState"), state: z.record(z.string(), z.unknown()) }),
+	z.object({ op: z.literal("ui.setZoom"), factor: z.number().min(0.5).max(2) }),
 	// Workspaces e sessões
 	z.object({ op: z.literal("workspace.pick") }),
 	z.object({ op: z.literal("workspace.list") }),
 	z.object({ op: z.literal("workspace.removeRecent"), workspaceId }),
 	z.object({ op: z.literal("workspace.relocate"), workspaceId }),
 	z.object({ op: z.literal("session.list"), workspaceId }),
-	z.object({ op: z.literal("session.create"), workspaceId }),
-	z.object({ op: z.literal("session.open"), workspaceId, sessionPath: z.string().min(1) }),
+	z.object({ op: z.literal("session.create"), workspaceId, approvalMode: approvalModeSchema.optional() }),
+	z.object({
+		op: z.literal("session.open"),
+		workspaceId,
+		sessionPath: z.string().min(1),
+		// Aba persistida: o main já autorizou o caminho pela listagem; o host
+		// pode abrir sem depender do inventário do OMP.
+		trustedPath: z.boolean().optional(),
+		approvalMode: approvalModeSchema.optional(),
+	}),
 	z.object({ op: z.literal("session.close"), workspaceId, sessionId }),
 	z.object({ op: z.literal("session.snapshot"), workspaceId, sessionId }),
 	z.object({ op: z.literal("session.rpc"), workspaceId, sessionId, command: rpcCommandSchema }),
@@ -181,7 +192,9 @@ export const desktopRequestSchema = z.discriminatedUnion("op", [
 	z.object({ op: z.literal("git.stage"), workspaceId, paths: z.array(relPath).min(1).max(500) }),
 	z.object({ op: z.literal("git.unstage"), workspaceId, paths: z.array(relPath).min(1).max(500) }),
 	z.object({ op: z.literal("git.commit"), workspaceId, message: z.string().min(1).max(20_000) }),
+	z.object({ op: z.literal("git.log"), workspaceId, limit: z.number().int().min(1).max(200).optional() }),
 	z.object({ op: z.literal("files.read"), workspaceId, path: relPath }),
+	z.object({ op: z.literal("files.readImage"), workspaceId, path: relPath }),
 	z.object({ op: z.literal("files.openExternal"), workspaceId, path: relPath }),
 	// Anexos
 	z.object({ op: z.literal("attachment.pick"), workspaceId }),
@@ -261,6 +274,7 @@ export interface RuntimeStatus {
 	platform?: "win32" | "linux" | "darwin";
 	ompPath?: string;
 	ompVersion?: string;
+	appVersion?: string;
 	gitVersion?: string;
 	shell?: string;
 	bunPath?: string;
@@ -329,6 +343,14 @@ export interface GitDiffResult {
 	original: string;
 	modified: string;
 	truncated: boolean;
+}
+
+export interface GitCommitSummary {
+	hash: string;
+	shortHash: string;
+	author: string;
+	date: string;
+	subject: string;
 }
 
 export interface AttachmentDto {

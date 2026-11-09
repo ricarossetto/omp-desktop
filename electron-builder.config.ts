@@ -1,6 +1,67 @@
 import type { Configuration } from "electron-builder";
 
 /**
+ * Arquivos base do aplicativo. O coletor de node_modules do electron-builder
+ * usa apenas os padrões de exclusão (`!`) desta lista; os includes acima
+ * servem para `out/` e para forçar o prebuild do PTY.
+ */
+const baseFiles: string[] = [
+	"out/**/*",
+	"package.json",
+	"!out/**/*.map",
+	// Garante o binário ConPTY opcional (Node-API) mesmo se o coletor de
+	// dependências ignorar optionalDependencies da plataforma.
+	"node_modules/@lydell/**/*",
+];
+
+/**
+ * Conteúdo de dependências que não é carregado pelo host Bun/Electron:
+ * source maps, declarações de tipos, testes, documentação e fontes TS de
+ * pacotes cujo runtime é o JS compilado. O host do SDK importa `src/*.ts`
+ * dos pacotes @oh-my-pi, por isso eles não entram aqui.
+ */
+const nonRuntimeFiles: string[] = [
+	"!**/*.map",
+	"!**/*.d.ts",
+	"!**/*.d.mts",
+	"!**/*.d.cts",
+	"!**/test/**",
+	"!**/tests/**",
+	"!**/__tests__/**",
+	"!**/*.test.*",
+	"!**/*.spec.*",
+	"!**/CHANGELOG*.md",
+	"!**/README*.md",
+	"!**/docs/**",
+	// Pacotes cujo entrypoint é JS compilado; `src` é apenas fonte/typecheck.
+	"!node_modules/zod/src/**/*",
+	"!node_modules/chromium-bidi/node_modules/zod/src/**/*",
+	"!node_modules/puppeteer-core/src/**/*",
+	"!node_modules/onnxruntime-node/lib/**/*",
+	"!node_modules/onnxruntime-node/script/**/*",
+	"!node_modules/@oh-my-pi/pi-coding-agent/scripts/**/*",
+	// O host Bun resolve o build `node` do transformers; os bundles web não
+	// são importados (o bundle WebGPU já vem embutido no build node).
+	"!node_modules/@huggingface/transformers/dist/transformers.js",
+	"!node_modules/@huggingface/transformers/dist/transformers.min.js",
+	"!node_modules/@huggingface/transformers/dist/transformers.web.js",
+	"!node_modules/@huggingface/transformers/dist/transformers.web.min.js",
+	"!node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs",
+];
+
+/**
+ * O onnxruntime-node publica bins de todas as plataformas. O binding resolve
+ * `bin/napi-v6/${process.platform}/${process.arch}`, então os demais diretórios
+ * nunca são carregados em win32-x64/linux-x64.
+ */
+function nativePlatformExcludes(platform: "win32" | "linux"): string[] {
+	const bin = "!node_modules/onnxruntime-node/bin/napi-v6";
+	return platform === "win32"
+		? [`${bin}/darwin/**/*`, `${bin}/linux/**/*`, `${bin}/win32/arm64/**/*`]
+		: [`${bin}/darwin/**/*`, `${bin}/win32/**/*`, `${bin}/linux/arm64/**/*`];
+}
+
+/**
  * Configuração compartilhada do electron-builder.
  *
  * O Windows continua com o instalador NSIS x64 por usuário. O Linux gera um
@@ -22,14 +83,7 @@ const common: Configuration = {
 	},
 	asar: false,
 	asarUnpack: ["**/@lydell/node-pty*/**", "**/*.node"],
-	files: [
-		"out/**/*",
-		"package.json",
-		"!out/**/*.map",
-		// Garante o binário ConPTY opcional (Node-API) mesmo se o coletor de
-		// dependências ignorar optionalDependencies da plataforma.
-		"node_modules/@lydell/**/*",
-	],
+	files: baseFiles,
 	// Node-API estável; os prebuilds da plataforma já vêm no pacote.
 	npmRebuild: false,
 	buildDependenciesFromSource: false,
@@ -63,9 +117,11 @@ const debDepends = [
 ];
 
 export function createBuilderConfig(platform: "win32" | "linux"): Configuration {
+	const files = [...baseFiles, ...nonRuntimeFiles, ...nativePlatformExcludes(platform)];
 	if (platform === "linux") {
 		return {
 			...common,
+			files,
 			// O Electron quebra o caminho de exec no espaço de "OMP Desktop"
 			// (`execvp /opt/OMP`, zygote 127). O diretório Linux usa o nome
 			// sem espaços; o nome exibido continua "OMP Desktop".
@@ -117,6 +173,7 @@ export function createBuilderConfig(platform: "win32" | "linux"): Configuration 
 
 	return {
 		...common,
+		files,
 		productName: "OMP Desktop",
 		artifactName: "OMP-Desktop-${version}-setup.${ext}",
 		extraResources: [

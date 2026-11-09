@@ -2,11 +2,50 @@
  * Leitura segura de arquivos do workspace e validação para abrir no editor
  * externo. Caminhos são relativos, validados por realpath dentro do projeto.
  */
-import { open, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import { resolveWorkspacePath, PathValidationError } from "./paths";
 
 export const MAX_FILE_READ_BYTES = 512 * 1024;
+export const MAX_IMAGE_READ_BYTES = 8 * 1024 * 1024;
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".webp": "image/webp",
+	".bmp": "image/bmp",
+	".ico": "image/x-icon",
+};
+
+export interface WorkspaceImageRead {
+	path: string;
+	size: number;
+	mimeType: string;
+	data: string;
+}
+
+/** Lê uma imagem raster do projeto como base64 para o preview embutido. */
+export async function readWorkspaceImage(
+	rootAbs: string,
+	relativePath: string,
+	maxBytes = MAX_IMAGE_READ_BYTES,
+): Promise<WorkspaceImageRead> {
+	const resolved = await resolveWorkspacePath(rootAbs, relativePath);
+	const info = await stat(resolved.realPath);
+	if (!info.isFile()) throw new PathValidationError("O caminho não é um arquivo.");
+	const mimeType = IMAGE_MIME_TYPES[path.extname(resolved.realPath).toLowerCase()];
+	if (!mimeType) throw new PathValidationError("Formato de imagem não suportado.");
+	if (info.size > maxBytes) throw new PathValidationError("A imagem excede o limite de 8 MiB.");
+	const data = await readFile(resolved.realPath);
+	return {
+		path: resolved.relativePath,
+		size: info.size,
+		mimeType,
+		data: data.toString("base64"),
+	};
+}
 
 export interface WorkspaceFileRead {
 	path: string;

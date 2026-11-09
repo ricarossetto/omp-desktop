@@ -603,3 +603,212 @@
 	gap: var(--space-3);
 	max-width: 640px;
 }
+
+.omp-color-input {
+	width: 48px;
+	height: 28px;
+	padding: 2px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--panel);
+	cursor: pointer;
+}
+
+/* Aprovações de ferramentas */
+.omp-approval-modes {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: var(--space-2);
+	max-width: 760px;
+}
+
+.omp-approval-card {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--panel);
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+}
+
+.omp-approval-card:hover {
+	border-color: var(--border-strong);
+}
+
+.omp-approval-card.is-active {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+}
+
+.omp-approval-card.is-warn .omp-approval-card__title {
+	color: var(--warning-strong);
+}
+
+.omp-approval-card__title {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+}
+
+.omp-approval-card__hint {
+	color: var(--muted);
+	font-size: var(--text-xs);
+	line-height: 1.4;
+}
+
+.omp-approval-projects {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	max-width: 640px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.omp-approval-project {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+}
+
+.omp-approval-project__name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.omp-approval-project select {
+	min-width: 180px;
+}
+
+.omp-approval-warning {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--warning-strong);
+	font-size: var(--text-xs);
+}
+
+/* Navegação lateral das configurações (mecânica do OpenCode/Bancada). */
+.omp-settings-layout {
+	display: grid;
+	grid-template-columns: 200px minmax(0, 1fr);
+	gap: var(--space-4);
+	flex: 1;
+	min-height: 0;
+	padding: 0 var(--space-4) var(--space-4);
+}
+
+.omp-settings-nav {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 2px;
+	padding: var(--space-2);
+	overflow: auto;
+	border-right: 1px solid var(--border);
+	border-bottom: 0;
+}
+
+.omp-settings-nav button {
+	justify-content: flex-start;
+	width: 100%;
+	padding: var(--space-2) var(--space-3);
+	border: 0;
+	border-radius: var(--radius-sm);
+	background: transparent;
+	color: var(--muted);
+	text-align: left;
+	cursor: pointer;
+}
+
+.omp-settings-nav button:hover {
+	background: var(--hover);
+	color: var(--text);
+}
+
+.omp-settings-nav button.is-active {
+	background: var(--accent-soft);
+	color: var(--text);
+}
+
+.omp-settings-panels {
+	min-height: 0;
+	overflow: auto;
+	padding-right: var(--space-2);
+}
+
+.omp-shortcuts {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-width: 640px;
+	margin: 0;
+}
+
+.omp-shortcuts__row {
+	display: grid;
+	grid-template-columns: 180px minmax(0, 1fr);
+	align-items: center;
+	gap: var(--space-3);
+	padding: var(--space-2) 0;
+	border-bottom: 1px solid var(--border);
+}
+
+.omp-shortcuts__row dt,
+.omp-shortcuts__row dd {
+	margin: 0;
+}
+
+.omp-shortcuts__row dd {
+	color: var(--muted);
+}
+
+.omp-shortcuts kbd {
+	display: inline-block;
+	padding: 2px 6px;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--panel-raised);
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: 11px;
+}
+
+.omp-about {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: var(--space-3);
+	max-width: 760px;
+	margin: 0;
+}
+
+.omp-about > div {
+	padding: var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--panel);
+}
+
+.omp-about dt {
+	color: var(--muted);
+	font-size: var(--text-xs);
+}
+
+.omp-about dd {
+	margin: 4px 0 0;
+	color: var(--text);
+}
+
+.omp-about__path {
+	overflow-wrap: anywhere;
+	font-size: 11px;
+}

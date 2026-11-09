@@ -98,6 +98,28 @@ export function createPreviewStore(initial: AppState): PreviewStore {
 		setTheme: (theme) => {
 			set((current) => ({ ...current, theme }));
 		},
+		setApprovalMode: async () => undefined,
+		setAccent: (accent) => set((current) => ({ ...current, accent })),
+		setDensity: (density) => set((current) => ({ ...current, density })),
+		setFontScale: (fontScale) => set((current) => ({ ...current, fontScale })),
+		setTabLayout: (tabLayout) => set((current) => ({ ...current, tabLayout })),
+		setTimelineWidth: (timelineWidth) => set((current) => ({ ...current, timelineWidth })),
+		setReduceMotion: (reduceMotion) => set((current) => ({ ...current, reduceMotion })),
+		moveTab: (sessionId, targetIndex) =>
+			set((current) => {
+				const from = current.tabs.indexOf(sessionId);
+				if (from < 0) return current;
+				const to = Math.max(0, Math.min(current.tabs.length - 1, targetIndex));
+				if (from === to) return current;
+				const tabs = [...current.tabs];
+				tabs.splice(from, 1);
+				tabs.splice(to, 0, sessionId);
+				return { ...current, tabs };
+			}),
+		requestCloseSession: (sessionId) =>
+			set((current) => ({ ...current, closingSessionId: sessionId })),
+		cancelCloseSession: () => set((current) => ({ ...current, closingSessionId: null })),
+		confirmCloseSession: async () => undefined,
 		toggleTerminal: () => {
 			set((current) => ({ ...current, layout: { ...current.layout, terminalOpen: !current.layout.terminalOpen } }));
 		},
@@ -137,6 +159,8 @@ export function createPreviewStore(initial: AppState): PreviewStore {
 		},
 		openExternal: done,
 		openWorkspaceFile: done,
+		openFileExternal: done,
+		closeFilePreview: () => undefined,
 	};
 
 	return {

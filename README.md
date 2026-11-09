@@ -9,7 +9,7 @@
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Bun](https://img.shields.io/badge/Bun-1.4-000000?logo=bun&logoColor=white)
-![Version](https://img.shields.io/badge/version-0.3.1-blue)
+![Version](https://img.shields.io/badge/version-0.5.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Languages](https://img.shields.io/badge/languages-pt--BR%20%7C%20en--US%20%7C%20zh--CN-blue)
 
@@ -25,7 +25,7 @@
 >
 > OMP Desktop is an independent desktop client for [OMP](https://omp.sh) (oh-my-pi). It is not part of the OMP project and is not maintained or endorsed by its authors. The agent, models, credentials, and sessions all come from the OMP installation on your machine.
 >
-> The app does not use OpenCode as its engine, and no OpenCode code or trademark was copied. Third-party components and their copyright notices are listed in [`resources/licenses`](resources/licenses/NOTICE.txt).
+> The app does not use OpenCode as its engine, and no OpenCode code or trademark was copied. The tab strip and the settings layout were informed by the user's opencode/Bancada study of OpenCode's mechanics; no OpenCode code was copied. Third-party components and their copyright notices are listed in [`resources/licenses`](resources/licenses/NOTICE.txt).
 
 ## Contents
 
@@ -55,7 +55,7 @@ In practice, the app is a window: the work is still done by the OMP installed on
 - **Windows x64 and Linux x86_64** desktop app built with **Electron 45**, **React 19**, and **Bun 1.4**.
 - OMP handles the agent's reasoning and tool calls. Git actions, attachment handling, the PTY, and window management run locally in the Electron main process.
 - No data migration: OMP sessions and configuration stay where OMP keeps them (`~/.omp`).
-- First public release: **v0.3.0**; current version: **v0.3.1**. The project is pre-1.0: configuration keys, UI details, and internal contracts may change between releases.
+- First public release: **v0.3.0**; current version: **v0.5.0**. The project is pre-1.0: configuration keys, UI details, and internal contracts may change between releases.
 
 ### What it does not do
 
@@ -67,9 +67,9 @@ In practice, the app is a window: the work is still done by the OMP installed on
 
 ## Release status
 
-The current version is **0.3.1**, the final version of this release. The **v0.3.1** release includes **Windows x64 and Linux x86_64** in the same release. The previous public release was [v0.3.0](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.0) (Windows x64 only).
+The current version is **0.5.0**. The **v0.5.0** release is **Windows x64** and ships `OMP-Desktop-0.5.0-setup.exe`. The Linux x86_64 packages remain in the [v0.3.1 release](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.1); the 0.5.0 source still builds them. The previous public Windows release was [v0.3.1](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.1).
 
-The Windows installer is per-user, without administrator rights, and **not digitally signed**. The Linux packages are also unsigned. There is no auto-update on either platform: to upgrade, download or build the new package and install it over the current version. v0.3.0 started the public cycle; v0.3.1 is the current release, still pre-1.0.
+The Windows installer is per-user, without administrator rights, and **not digitally signed**. The Linux packages (v0.3.1) are also unsigned. There is no auto-update on either platform: to upgrade, download or build the new package and install it over the current version. v0.3.0 started the public cycle; v0.5.0 is the current release, still pre-1.0.
 
 ## First run
 
@@ -87,12 +87,12 @@ After that, open a folder, create a session, and start talking. Settings live in
 
 | System | Package | Status |
 | --- | --- | --- |
-| Windows 10/11 x64 | `OMP-Desktop-0.3.1-setup.exe` (NSIS, x64) | included in v0.3.1 |
-| Debian 12/13, Ubuntu 24.04/26.04 x86_64 | `OMP-Desktop-0.3.1-linux-amd64.deb` | included in v0.3.1 |
-| Linux x86_64 (TAR.GZ) | `OMP-Desktop-0.3.1-linux-x64.tar.gz` | included in v0.3.1 |
-| Arch Linux x86_64 | `omp-desktop-0.3.1-1-x86_64.pkg.tar.zst` (PKGBUILD) | included in v0.3.1 |
+| Windows 10/11 x64 | `OMP-Desktop-0.5.0-setup.exe` (NSIS, x64) | included in v0.5.0 |
+| Debian 12/13, Ubuntu 24.04/26.04 x86_64 | `OMP-Desktop-0.3.1-linux-amd64.deb` | latest Linux release (v0.3.1) |
+| Linux x86_64 (TAR.GZ) | `OMP-Desktop-0.3.1-linux-x64.tar.gz` | latest Linux release (v0.3.1) |
+| Arch Linux x86_64 | `omp-desktop-0.3.1-1-x86_64.pkg.tar.zst` (PKGBUILD) | latest Linux release (v0.3.1) |
 
-The **v0.3.1** release publishes a single global `SHA256SUMS` covering all four artifacts. The previous v0.3.0 release remains available for Windows x64.
+The **v0.5.0** release publishes the Windows installer and a `SHA256SUMS` for it. The **v0.3.1** release keeps its global `SHA256SUMS` covering the four 0.3.1 artifacts.
 
 **OMP version support:** The validated baseline is 18.16.0, and the assisted installer pins exactly 18.16.0. The host accepts OMP major version 18 or newer; OMP 17 or older is rejected as incompatible. Versions newer than the 18.x series are accepted but marked as not validated. The same rule applies on Windows and Linux.
 
@@ -103,7 +103,7 @@ The application **does not include the OMP executable**. It includes the Bun run
 | Item | Detail |
 | --- | --- |
 | System | Windows x64 (Windows 10 or 11) |
-| Installer | `OMP-Desktop-0.3.1-setup.exe` (NSIS, x64); the previous v0.3.0 installer keeps its 0.3.0 name |
+| Installer | `OMP-Desktop-0.5.0-setup.exe` (NSIS, x64); the previous v0.3.1 installer keeps its 0.3.1 name |
 | Scope | per-user; does not request administrator rights |
 | Signature | unsigned; SmartScreen may warn |
 | Bun | bundled at `resources/bun/bun.exe` |
@@ -112,7 +112,7 @@ The application **does not include the OMP executable**. It includes the Bun run
 | Node.js | optional; only needed for projects/MCP and the official npm; the app can install the current Node.js LTS on request |
 | Updates | manual; there is no auto-update |
 
-1. Download the installer from the [v0.3.1 release](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.3.1) (tag `v0.3.1`, `OMP-Desktop-0.3.1-setup.exe`). The previous v0.3.0 installer keeps the 0.3.0 name.
+1. Download the installer from the [v0.5.0 release](https://github.com/ricarossetto/omp-desktop/releases/tag/v0.5.0) (tag `v0.5.0`, `OMP-Desktop-0.5.0-setup.exe`). The previous v0.3.1 installer keeps the 0.3.1 name.
 2. If the release publishes a SHA-256, verify the file before running it (see below).
 3. Run the installer. It installs into the user folder and does not request elevation.
 4. Open OMP Desktop. The assistant checks the environment. If OMP is not found, choose **Install OMP**, or point to an existing `omp.exe`.
@@ -120,7 +120,7 @@ The application **does not include the OMP executable**. It includes the Bun run
 
 ### Linux (x86_64)
 
-Linux packages are built from this source and are included in the **v0.3.1** release with Windows. v0.3.0 was Windows-only. This project does not publish an AUR package, PPA, AppImage, or auto-update channel. The planned targets are Debian 12 and 13, Ubuntu 24.04 and 26.04, and current Arch Linux, all x86_64 with glibc; ARM and macOS are out of scope.
+Linux packages are built from this source and are included in the **v0.3.1** release with Windows. v0.3.0 was Windows-only. The **v0.5.0** release is Windows-only; the Linux packages remain at v0.3.1 until a Linux build is published. This project does not publish an AUR package, PPA, AppImage, or auto-update channel. The planned targets are Debian 12 and 13, Ubuntu 24.04 and 26.04, and current Arch Linux, all x86_64 with glibc; ARM and macOS are out of scope.
 
 | Item | Detail |
 | --- | --- |
@@ -239,10 +239,10 @@ The renderer cannot supply a URL, version, command, or folder: sources, versions
 - If the release publishes a SHA-256, compare it with the output of:
 
 ```powershell
-Get-FileHash .\OMP-Desktop-0.3.1-setup.exe -Algorithm SHA256
+Get-FileHash .\OMP-Desktop-0.5.0-setup.exe -Algorithm SHA256
 ```
 
-The previous v0.3.0 installer keeps the 0.3.0 name. If the hash does not match, do not run the file.
+The previous v0.3.1 installer keeps the 0.3.1 name. If the hash does not match, do not run the file.
 
 **Linux.** The `.deb` and the Arch package are not signed. Build them from this source or obtain them from a source you trust, and verify `release/SHA256SUMS` before installing:
 
@@ -267,6 +267,7 @@ On both platforms, **do not delete `~/.omp` just to uninstall the desktop app**:
 
 - Open any folder as a project; recent projects are saved. A missing folder appears as unavailable and can be relocated. Removing a recent project never deletes files.
 - The session list comes from OMP itself, without creating a parallel copy of the history.
+- A horizontal tab strip shows the open sessions. Drag to reorder, close with confirmation, see a busy indicator and the project color, and create a session with **+** or `Ctrl+T`. The strip can live on the top bar or in the sidebar (**Settings → Appearance**); `Ctrl+W` closes the current tab and `Alt+↑`/`Alt+↓` move between tabs.
 - **One active session = one OMP process**, in the project directory. Switching tabs does not interrupt an agent that is working.
 - A session in use by another process is not taken by force: the app warns you and offers to open another one.
 - When you reopen the app, tabs return with the same conversation. **No prompt is resent**, even after a crash.
@@ -284,6 +285,8 @@ On both platforms, **do not delete `~/.omp` just to uninstall the desktop app**:
 - Conversation export to HTML from the command palette.
 - In the composer, `/` opens the commands OMP announces; skills, MCP, and extensions are still executed by OMP. The palette (`Ctrl+K`) has a general mode and a mode restricted to skills/MCP.
 - Attachments through the button, drag and drop, or pasted image. Text files enter as a delimited block with name and content; PDFs and binaries become file references, not content sent to the model. The limit is **600 KiB per attachment**, because the whole prompt must fit in one OMP frame; the frame limit is checked before sending and nothing is silently truncated.
+- **Prompt history:** `↑`/`↓` in an empty composer recalls previous prompts; `Ctrl+↑` opens a searchable picker.
+- Click an image to open it in a lightbox. File links open an in-app preview (text or raster image) with **Open externally**; the preview does not execute content.
 
 ### Runners, tasks, and goal
 
@@ -294,6 +297,7 @@ On both platforms, **do not delete `~/.omp` just to uninstall the desktop app**:
 
 ### Approvals
 
+- **Tool approval modes:** `always-ask`, `always-ask-cached`, `write` (default), and `yolo`, global or per project. Changing the mode restarts the session with `--resume`; if the session is busy, the mode applies when the current turn ends. The app never approves on its own: `yolo` is an explicit choice and the interface warns about it.
 - `select`, `confirm`, `input` (masked, with a reveal option), `editor`, and `ask` with multiple questions, multi-select, and a free-form answer.
 - **The app never approves anything on its own.** Details, target, and command are visible before the decision.
 - Each request is answered once; canceling or letting the deadline expire never becomes approval. When OMP has its own timeout for `ask`, the interface warns that it may proceed with the recommended options.
@@ -318,6 +322,7 @@ On both platforms, **do not delete `~/.omp` just to uninstall the desktop app**:
 - Repository status with renames, untracked files, binaries, names with Unicode and spaces, and a repository without commits.
 - **Working** and **index** diffs in the Monaco editor, local and without a CDN.
 - Stage and unstage per file without touching the working tree. Commit only with a typed message and a click; a hook failure is shown and the files remain intact.
+- **Recent commit history** in the Changes panel: hash, subject, author, and date; read-only.
 - No `push`, `reset`, `clean`, or automatic discard. Outside a repository, the panel explains the situation and does not run `git init`.
 - Git is optional. If it is missing, the panel explains the absence; the optional action is available in Diagnostics and **Settings → General** (on Linux it shows the package-manager command). No repository is simulated.
 
@@ -327,9 +332,10 @@ On both platforms, **do not delete `~/.omp` just to uninstall the desktop app**:
 
 ### Interface, theme, and languages
 
-- Dark, light, or follow the system theme (the label still mentions Windows in this version); resizable panels with persisted sizes.
+- Themes **aurora**, **phosphor**, and **daylight** in addition to dark, light, and follow the system; a custom accent color; **comfortable** or **compact** density; interface scale; reduced motion (system/on/off); conversation width (focused/comfortable/wide); resizable panels with persisted sizes.
+- Settings uses a left navigation: **General**, **Appearance**, **Models**, **Accounts**, **Approvals**, **Shortcuts**, and **About**. About shows the app version, OMP version, Bun, platform, signing state, and license.
 - Below 1000 px, the sidebar and the right panel become drawers; the conversation is never squeezed.
-- Visible focus, keyboard navigation, accessible labels, and respect for `prefers-reduced-motion`.
+- Visible focus, keyboard navigation, accessible labels, and respect for `prefers-reduced-motion` and the in-app reduced-motion setting.
 - Portuguese (Brazil), English (US), and Simplified Chinese. The app follows the system language on first run; the choice lives in **Settings → General → Language**. Identifiers, commands, paths, and model names are not translated.
 
 ### Accessibility and quality
@@ -344,9 +350,15 @@ The interface was built with visible focus, keyboard navigation, accessible labe
 | `Ctrl+M` | Model and reasoning selector |
 | `Ctrl+Shift+P` | Open project |
 | `Ctrl+N` | New session |
+| `Ctrl+T` | New session (same as `Ctrl+N`) |
+| `Ctrl+W` | Close the current tab (confirmation when the session is busy) |
+| `Ctrl+,` | Open settings |
 | `Ctrl+B` | Toggle sidebar |
+| `Alt+↑` / `Alt+↓` | Previous/next tab |
 | ``Ctrl+` `` | Open or close the terminal |
 | `Alt+←` / `Alt+→` | Back/forward through session history |
+| `↑` / `↓` | Recall the previous/next prompt in an empty composer |
+| `Ctrl+↑` | Open the prompt history picker |
 | `Esc` | Closes the palette, model selector, or settings; with an approval open, cancels the request (never approves); with nothing open and outside a text field, stops the agent |
 | `Ctrl+Enter` | Sends in the dialog editor (`Enter` inserts a line break) |
 | `Enter` / `Shift+Enter` | Send / insert a line break in the composer |
@@ -500,16 +512,16 @@ Dependency auditing and the release process are described in [`docs/release-secu
 
 ## Known limitations
 
-- **Platforms: Windows x64 and Linux x86_64.** The Linux scope is Debian 12/13, Ubuntu 24.04/26.04, and current Arch Linux. There are no ARM, macOS, AppImage, AUR, or PPA builds. The v0.3.1 release includes Linux in the same release as Windows; v0.3.0 was Windows-only.
+- **Platforms: Windows x64 and Linux x86_64.** The Linux scope is Debian 12/13, Ubuntu 24.04/26.04, and current Arch Linux. There are no ARM, macOS, AppImage, AUR, or PPA builds. The v0.3.1 release includes Linux in the same release as Windows; v0.3.0 was Windows-only. The v0.5.0 release is Windows-only; the Linux packages remain at v0.3.1.
 - **No auto-update.** Download or build the new package and install it over the current version.
 - **OMP is not bundled.** The first-run assistant can install the pinned official binary (18.16.0) for the current platform after an explicit click, but it does not update OMP silently; a compatible OMP executable (major version 18 or newer; validated at 18.16.0) is required.
-- **No permission-mode selector of its own.** The app shows the approvals OMP sends and does not invent permission levels the RPC does not announce.
+- **Approval modes are explicit.** The app offers `always-ask`, `always-ask-cached`, `write` (default), and `yolo`, global or per project; `yolo` is an explicit choice and the interface warns about it. The app still shows the approvals OMP sends.
 - **Git and Node.js LTS are optional and not bundled.** On Windows the app can install both on request; on Linux it can install Node.js and shows the Git command for your package manager. Neither is updated silently; a compatible global installation is detected and used as-is.
 - **Git without `push`, `reset`, `clean`, or discard.** The panel covers status, diff, stage, unstage, and commit.
 - **Unsigned packages.** The Windows installer may trigger SmartScreen; the Linux packages are also unsigned. There is no code-signing certificate in this version.
 - **Attachments limited to 600 KiB per file** and to OMP's default 1 MB frame. History is no longer capped at 8 MiB by the desktop, but remains subject to the OMP transport frame limit (1 MB default; host JSONL lines up to 64 MiB).
 - **No WCAG conformance claim** and no documented testing with screen readers or users. Automated checks have limits.
-- **v0.3.0 was the first public release; v0.3.1 is the current release.** Some rough edges are expected, and it is not 1.0.
+- **v0.3.0 was the first public release; v0.5.0 is the current release.** Some rough edges are expected, and it is not 1.0.
 
 ## Contributing
 

@@ -6,7 +6,11 @@ import { useI18n, useT, type MessageKey } from "../../i18n";
 import { useActions, useStore } from "../../store/context";
 import { isLiveSteered } from "../../store/queue-policy";
 import { EMPTY_COMPOSER_DRAFT, shouldSubmitOnKey } from "./composer-policy";
+import { caretOnFirstLine, caretOnLastLine } from "./prompt-history";
+import { PromptHistoryPicker } from "./PromptHistoryPicker";
 import { toolSummary } from "./ToolCard";
+
+const EMPTY_HISTORY: string[] = [];
 
 export interface ComposerProps {
 	view: SessionViewState;
@@ -40,6 +44,7 @@ export function Composer({ view }: ComposerProps) {
 	const draft = useStore((state) => state.drafts[view.sessionId] ?? EMPTY_COMPOSER_DRAFT);
 	const sending = useStore((state) => state.sending[view.sessionId] === true);
 	const focusNonce = useStore((state) => state.composerFocusNonce);
+	const history = useStore((state) => state.promptHistory[view.sessionId] ?? EMPTY_HISTORY);
 
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const composingRef = useRef(false);
@@ -56,6 +61,9 @@ export function Composer({ view }: ComposerProps) {
 	const [paused, setPaused] = useState(false);
 	const [plusOpen, setPlusOpen] = useState(false);
 	const plusRef = useRef<HTMLDivElement>(null);
+	const [historyIndex, setHistoryIndex] = useState(-1);
+	const [historyDraft, setHistoryDraft] = useState("");
+	const [historyOpen, setHistoryOpen] = useState(false);
 	const [workingSince, setWorkingSince] = useState<number | null>(null);
 	const [now, setNow] = useState(() => Date.now());
 
@@ -186,7 +194,11 @@ export function Composer({ view }: ComposerProps) {
 		async (behavior?: "steer" | "followUp") => {
 			if (!canSend) return;
 			const attachmentIds = draft.attachments.map((attachment) => attachment.attachmentId);
-			await actions.sendPrompt(view.sessionId, draft.text, attachmentIds, behavior);
+			const ok = await actions.sendPrompt(view.sessionId, draft.text, attachmentIds, behavior);
+			if (ok) {
+				setHistoryIndex(-1);
+				setHistoryDraft("");
+			}
 		},
 		[actions, canSend, draft.attachments, draft.text, view.sessionId],
 	);
@@ -218,6 +230,59 @@ export function Composer({ view }: ComposerProps) {
 				event.preventDefault();
 				event.stopPropagation();
 				setSlashDismissed(true);
+				return;
+			}
+		}
+
+		if (
+			event.key === "ArrowUp" &&
+			(event.ctrlKey || event.metaKey) &&
+			!event.altKey &&
+			!event.shiftKey
+		) {
+			if (history.length > 0) {
+				event.preventDefault();
+				setHistoryOpen(true);
+			}
+			return;
+		}
+		if (
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.shiftKey &&
+			(event.key === "ArrowUp" || event.key === "ArrowDown")
+		) {
+			const element = event.currentTarget;
+			const start = element.selectionStart ?? 0;
+			const end = element.selectionEnd ?? 0;
+			if (
+				event.key === "ArrowUp" &&
+				caretOnFirstLine(draft.text, start, end) &&
+				(historyIndex >= 0 || draft.text.length === 0)
+			) {
+				if (history.length === 0) return;
+				event.preventDefault();
+				if (historyIndex < 0) setHistoryDraft(draft.text);
+				const next = Math.min(history.length - 1, historyIndex + 1);
+				setHistoryIndex(next);
+				actions.setDraft(view.sessionId, history[next] ?? "");
+				return;
+			}
+			if (
+				event.key === "ArrowDown" &&
+				historyIndex >= 0 &&
+				caretOnLastLine(draft.text, start, end)
+			) {
+				event.preventDefault();
+				if (historyIndex <= 0) {
+					setHistoryIndex(-1);
+					actions.setDraft(view.sessionId, historyDraft);
+				} else {
+					const next = historyIndex - 1;
+					setHistoryIndex(next);
+					actions.setDraft(view.sessionId, history[next] ?? "");
+				}
 				return;
 			}
 		}
@@ -481,7 +546,11 @@ export function Composer({ view }: ComposerProps) {
 					}
 					rows={1}
 					disabled={disabled}
-					onChange={(event) => actions.setDraft(view.sessionId, event.target.value)}
+					onChange={(event) => {
+						setHistoryIndex(-1);
+						setHistoryDraft("");
+						actions.setDraft(view.sessionId, event.target.value);
+					}}
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste}
 					onCompositionStart={() => {
@@ -619,6 +688,35 @@ export function Composer({ view }: ComposerProps) {
 					</div>
 				</div>
 			</div>
+
+			{historyOpen ? (
+				<div
+					className="overlay"
+					role="presentation"
+					onMouseDown={(event) => {
+						if (event.target === event.currentTarget) setHistoryOpen(false);
+					}}
+				>
+					<div
+						className="prompt-history"
+						role="dialog"
+						aria-modal="true"
+						aria-label={t("composer.historyTitle")}
+					>
+						<PromptHistoryPicker
+							items={history}
+							onSelect={(text) => {
+								setHistoryOpen(false);
+								setHistoryIndex(-1);
+								setHistoryDraft("");
+								actions.setDraft(view.sessionId, text);
+								requestAnimationFrame(() => textareaRef.current?.focus());
+							}}
+							onClose={() => setHistoryOpen(false)}
+						/>
+					</div>
+				</div>
+			) : null}
 		</div>
 	);
 }

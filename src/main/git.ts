@@ -4,7 +4,12 @@
  */
 import { execFile } from "node:child_process";
 import { open, stat } from "node:fs/promises";
-import type { GitDiffResult, GitFileStatus, GitStatusResult } from "../shared/contracts";
+import type {
+	GitCommitSummary,
+	GitDiffResult,
+	GitFileStatus,
+	GitStatusResult,
+} from "../shared/contracts";
 import { assertWorkspaceDirectory, resolveWorkspacePathAllowMissing, validateRelativePath } from "./paths";
 
 export class GitError extends Error {
@@ -338,6 +343,44 @@ export async function gitUnstage(rootAbs: string, paths: string[]): Promise<{ pa
 export interface GitCommitResult {
 	commit?: string;
 	output: string;
+}
+
+/** Histórico linear recente; o grafo completo fica para o git nativo. */
+export async function gitLog(rootAbs: string, limit = 50): Promise<GitCommitSummary[]> {
+	const root = await assertWorkspaceDirectory(rootAbs);
+	if (!(await isGitRepository(root))) return [];
+	const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+	let result: GitRunResult;
+	try {
+		result = await runGit(
+			root,
+			[
+				"log",
+				`--max-count=${safeLimit}`,
+				"--date=iso-strict",
+				"--pretty=format:%H%x00%h%x00%an%x00%ad%x00%s",
+			],
+			{ optionalLocks: true },
+		);
+	} catch (error) {
+		// Repositório recém-criado: não há HEAD ainda, mas não é uma falha.
+		if (
+			error instanceof GitError &&
+			/does not have any commits|unknown revision|bad revision/i.test(error.message)
+		) {
+			return [];
+		}
+		throw error;
+	}
+	const text = result.stdout.toString("utf8");
+	if (!text.trim()) return [];
+	return text
+		.split("\n")
+		.map((line) => {
+			const [hash = "", shortHash = "", author = "", date = "", subject = ""] = line.split("\0");
+			return { hash, shortHash, author, date, subject };
+		})
+		.filter((commit) => commit.hash.length > 0 && commit.shortHash.length > 0);
 }
 
 export async function gitCommit(rootAbs: string, message: string): Promise<GitCommitResult> {

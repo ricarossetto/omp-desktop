@@ -1,7 +1,7 @@
 {
 	"name": "omp-desktop",
 	"private": true,
-	"version": "0.3.1",
+	"version": "0.5.0",
 	"type": "module",
 	"description": "OMP Desktop: aplicativo desktop para o mecanismo OMP (Windows e Linux x86_64)",
 	"desktopName": "omp-desktop.desktop",

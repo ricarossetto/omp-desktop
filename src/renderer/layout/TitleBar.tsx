@@ -80,8 +80,8 @@ function Glyph({ name }: { name: "side" | "back" | "fwd" | "search" | "sun" | "m
 }
 
 function isDarkNow(theme: string): boolean {
-	if (theme === "dark") return true;
-	if (theme === "light") return false;
+	if (theme === "dark" || theme === "aurora" || theme === "phosphor") return true;
+	if (theme === "light" || theme === "daylight") return false;
 	return typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 

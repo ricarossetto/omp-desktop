@@ -8,6 +8,7 @@
 import {
 	app,
 	BrowserWindow,
+	crashReporter,
 	dialog,
 	Menu,
 	nativeTheme,
@@ -78,6 +79,11 @@ if (userDataOverride) {
 
 if (process.platform === "win32") app.setAppUserModelId("local.omp.desktop");
 
+// Crashpad local, sem upload. Sem iniciar o crashReporter, um crash nativo do
+// renderer termina em Crashpad_NotConnectedToHandler (exitCode -36861) e a
+// causa original se perde; o dump fica em app.getPath("crashDumps").
+crashReporter.start({ uploadToServer: false });
+
 const smokeReportArg = argValue("--smoke-report");
 const initialCwdArg = argValue("--cwd");
 
@@ -93,12 +99,19 @@ let restartingHost = false;
 let shuttingDown = false;
 let promptInFlight = false;
 let rendererLoaded = false;
+/** Instantes dos crashes do renderer na janela atual (recuperação com limite). */
+let rendererCrashTimes: number[] = [];
 let showingError = false;
 let retrying = false;
 let initialCwdConsumed = false;
 let hostStatusSequence = 0;
 let selectedOmpPath: string | undefined;
-let runtimeStatus: RuntimeStatus = { phase: "starting-host", signed: false, platform: desktopPlatform() };
+let runtimeStatus: RuntimeStatus = {
+	phase: "starting-host",
+	signed: false,
+	platform: desktopPlatform(),
+	appVersion: app.getVersion(),
+};
 let installService: OmpInstallService | null = null;
 let installPromise: Promise<RuntimeStatus> | null = null;
 let lastInstallProgressAt = 0;
@@ -551,9 +564,24 @@ function attachWindowDiagnostics(win: BrowserWindow): void {
 	win.webContents.on("render-process-gone", (_event, details) => {
 		log("error", "janela.renderer_encerrou", { reason: details.reason, exitCode: details.exitCode });
 		rendererLoaded = false;
+		if (shuttingDown) return;
+		const now = Date.now();
+		rendererCrashTimes = rendererCrashTimes.filter((at) => now - at < 5 * 60_000);
+		rendererCrashTimes.push(now);
+		// O host continua vivo e guarda a sessão; recarregar a interface reaplica
+		// o snapshot sem reenviar prompt. Limita a 3 tentativas em 5 minutos para
+		// não entrar em loop se o crash for determinístico.
+		if (rendererCrashTimes.length <= 3) {
+			log("warn", "janela.recuperando", { attempt: rendererCrashTimes.length });
+			setTimeout(() => {
+				if (win.isDestroyed() || shuttingDown) return;
+				void retryFromErrorPage();
+			}, 1000);
+			return;
+		}
 		void showErrorPage(
 			win,
-			`A interface do aplicativo foi encerrada inesperadamente (${details.reason}).\n\nNenhum prompt foi reenviado. Tente reabrir a interface.`,
+			`A interface do aplicativo foi encerrada inesperadamente (${details.reason}).\n\nA recuperação automática falhou 3 vezes em 5 minutos. Nenhum prompt foi reenviado. Tente reabrir a interface.`,
 		);
 	});
 	win.webContents.on("preload-error", (_event, preload, error) => {
@@ -624,7 +652,13 @@ function syncTitleBarTheme(win: BrowserWindow | null = mainWindow): void {
 
 /** O tema escolhido no app também decide as cores do overlay nativo. */
 export function applyThemeSource(theme: unknown): void {
-	if (theme === "light" || theme === "dark" || theme === "system") nativeTheme.themeSource = theme;
+	const source =
+		theme === "light" || theme === "daylight"
+			? "light"
+			: theme === "dark" || theme === "aurora" || theme === "phosphor"
+				? "dark"
+				: "system";
+	nativeTheme.themeSource = source;
 	syncTitleBarTheme();
 }
 
@@ -760,6 +794,9 @@ async function startHost(): Promise<void> {
 	if (selectedOmpPath) env.OMP_DESKTOP_OMP_PATH = selectedOmpPath;
 	// Mantém workspaces/abas do host dentro do userData do app (isolado em testes).
 	env.OMP_DESKTOP_DATA_DIR = path.join(userDataDir, "host-data");
+	// A interface restaura só a aba ativa; abrir todas as abas no boot sobe um
+	// processo OMP por aba e já esgotou memória em sessões longas.
+	env.OMP_DESKTOP_LAZY_TABS = "1";
 	const client = new HostClient({
 		bunPath,
 		hostScript,
@@ -1138,7 +1175,11 @@ async function refreshRuntimeStatus(): Promise<RuntimeStatus> {
 				await restartHost(probe.ompPath);
 				return runtimeStatus;
 			}
-			runtimeStatus = { ...probe, install: runtimeStatus.install };
+			runtimeStatus = {
+				...probe,
+				install: runtimeStatus.install,
+				appVersion: app.getVersion(),
+			};
 			emitStatus();
 		} catch (error) {
 			log("error", "runtime.reprobe_falhou", { message: (error as Error).message });
@@ -1223,6 +1264,16 @@ async function promptAndShutdown(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
 	await app.whenReady();
+	log("info", "app.crash_dumps", { path: app.getPath("crashDumps") });
+	app.on("child-process-gone", (_event, details) => {
+		log("error", "processo.filho_encerrou", {
+			type: details.type,
+			reason: details.reason,
+			exitCode: details.exitCode,
+			serviceName: details.serviceName,
+			name: details.name,
+		});
+	});
 	Menu.setApplicationMenu(null);
 	installPermissionHandlers();
 	await rotateLogIfNeeded();
@@ -1327,7 +1378,7 @@ async function bootstrap(): Promise<void> {
 	await loadApp(mainWindow);
 
 	log("info", "app.iniciado", { version: app.getVersion(), packaged: app.isPackaged });
-	runtimeStatus = await discovery;
+	runtimeStatus = { ...(await discovery), appVersion: app.getVersion() };
 	adoptResolvedOmpPath();
 	if (
 		hostReady &&

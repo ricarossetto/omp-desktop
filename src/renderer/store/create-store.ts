@@ -8,7 +8,12 @@ import type {
 	UiResponse,
 	WorkspaceDto,
 } from "@shared/contracts";
-import type { SessionSnapshot, SessionViewState } from "@shared/session-types";
+import {
+	DEFAULT_APPROVAL_MODE,
+	type ApprovalMode,
+	type SessionSnapshot,
+	type SessionViewState,
+} from "@shared/session-types";
 import { applyEvent, createSessionState } from "@shared/session-state";
 import { invoke, subscribe } from "../api";
 import {
@@ -21,6 +26,11 @@ import {
 	type ComposerDraft,
 	type RestoredImage,
 } from "../features/conversation/composer-policy";
+import {
+	mergeOlderPrompts,
+	promptsFromMessages,
+	recordPrompt,
+} from "../features/conversation/prompt-history";
 import { clearDialogsForLostSession, unsupportedDialogMethod } from "./dialog-state";
 import { errorDetail } from "../features/errors/error-messages";
 import { installErrorKey } from "../features/diagnostics/install-errors";
@@ -43,14 +53,29 @@ import {
 	activeWorkspace,
 	clampLayout,
 	fallbackSessionTitle,
+	isThemeMode,
+	normalizeAccent,
+	normalizeApprovalSettings,
+	normalizeDensity,
+	normalizeFontScale,
+	normalizeReduceMotion,
+	normalizeTabLayout,
+	normalizeTimelineWidth,
+	resolveApprovalMode,
+	sessionHasActiveWork,
 	type AppNotice,
 	type AppState,
+	type ApprovalSettings,
+	type DensityMode,
 	type LayoutState,
 	type PaletteMode,
 	type PersistedTab,
+	type ReduceMotion,
 	type SessionRecord,
 	type SettingsTab,
+	type TabLayout,
 	type ThemeMode,
+	type TimelineWidth,
 } from "./state";
 
 export interface AppActions {
@@ -99,6 +124,21 @@ export interface AppActions {
 
 	setLayout(partial: Partial<LayoutState>): void;
 	setTheme(theme: ThemeMode): void;
+	setAccent(accent: string | null): void;
+	setDensity(density: DensityMode): void;
+	setFontScale(fontScale: number): void;
+	setTabLayout(layout: TabLayout): void;
+	setTimelineWidth(width: TimelineWidth): void;
+	setReduceMotion(mode: ReduceMotion): void;
+	moveTab(sessionId: string, targetIndex: number): void;
+	requestCloseSession(sessionId: string): void;
+	cancelCloseSession(): void;
+	confirmCloseSession(): Promise<void>;
+	/** Aplica no padrão global ou no projeto e reinicia as sessões afetadas. */
+	setApprovalMode(
+		mode: ApprovalMode | null,
+		target?: { global?: boolean; workspaceId?: string },
+	): Promise<void>;
 	toggleTerminal(): void;
 	setRightTab(tab: LayoutState["rightTab"]): void;
 	toggleRightPanel(): void;
@@ -112,6 +152,8 @@ export interface AppActions {
 	dismissNotice(id: string): void;
 	openExternal(url: string): Promise<void>;
 	openWorkspaceFile(path: string): Promise<void>;
+	openFileExternal(path: string): Promise<void>;
+	closeFilePreview(): void;
 }
 
 export interface AppStore {
@@ -125,6 +167,10 @@ interface InstallOptions {
 	quiet?: boolean;
 	/** Título vindo da listagem autorizada, quando o snapshot não traz nome. */
 	title?: string;
+	/** Aba persistida: o caminho veio do ui-state, não da listagem do OMP. */
+	trustedPath?: boolean;
+	/** Modo pedido ao abrir; sem ele, vale o padrão/override do projeto. */
+	approvalMode?: ApprovalMode;
 }
 
 const SHELL_VERSION = 1;
@@ -191,6 +237,8 @@ export function createAppStore(): AppStore {
 	const earlyBuffers = new Map<string, { at: number; events: DesktopEvent[] }>();
 	const resyncInFlight = new Set<string>();
 	const lastStatsAt = new Map<string, number>();
+	/** Sessões ocupadas cujo modo de aprovação muda quando o turno terminar. */
+	const pendingApprovalMode = new Map<string, ApprovalMode>();
 	/** Incrementado quando o host reinicia: snapshots em voo não valem mais. */
 	let sessionEpoch = 0;
 	/** O host avisou `starting-host`; ao voltar a `ready` as abas reabrem do zero. */
@@ -258,8 +306,18 @@ export function createAppStore(): AppStore {
 				},
 			];
 		});
-		// Workspaces ainda não restaurados mantêm as abas persistidas anteriores.
-		const hidden = persistedTabs.filter((tab) => !hydratedWorkspaces.has(tab.workspaceId));
+		// Mantém as abas persistidas que ainda não foram abertas nesta execução,
+		// inclusive as de workspaces já hidratados (restauração preguiçosa).
+		const openSessionIds = new Set(open.map((tab) => tab.sessionId));
+		const openPaths = new Set(
+			open.map((tab) => tab.sessionPath).filter((value): value is string => Boolean(value)),
+		);
+		const hidden = persistedTabs.filter((tab) => {
+			if (!hydratedWorkspaces.has(tab.workspaceId)) return true;
+			if (tab.sessionId && openSessionIds.has(tab.sessionId)) return false;
+			if (tab.sessionPath && openPaths.has(tab.sessionPath)) return false;
+			return true;
+		});
 		return [...open, ...hidden];
 	};
 
@@ -270,6 +328,13 @@ export function createAppStore(): AppStore {
 			version: SHELL_VERSION,
 			layout: state.layout,
 			theme: state.theme,
+			accent: state.accent,
+			density: state.density,
+			fontScale: state.fontScale,
+			tabLayout: state.tabLayout,
+			timelineWidth: state.timelineWidth,
+			reduceMotion: state.reduceMotion,
+			approval: state.approval,
 			activeWorkspaceId: state.activeWorkspaceId,
 			tabs: serializeTabs(state),
 			unreadSessions: state.unreadSessions,
@@ -412,6 +477,7 @@ export function createAppStore(): AppStore {
 			workspaceId: view.workspaceId || workspaceId,
 			sessionPath: snapshot.sessionPath,
 			title: view.meta?.sessionName ?? options.title,
+			approvalMode: snapshot.approvalMode ?? options.approvalMode,
 		};
 		set((current) => {
 			const previousRecord = current.sessionRecords[sessionId];
@@ -429,9 +495,17 @@ export function createAppStore(): AppStore {
 							previousRecord?.title ??
 							fallbackSessionTitle(record.sessionPath ?? previousRecord?.sessionPath, sessionId),
 						sessionPath: record.sessionPath ?? previousRecord?.sessionPath,
+						approvalMode: record.approvalMode ?? previousRecord?.approvalMode,
 					},
 				},
 				sessionStates: { ...current.sessionStates, [sessionId]: view },
+				promptHistory: {
+					...current.promptHistory,
+					[sessionId]: mergeOlderPrompts(
+						current.promptHistory[sessionId] ?? [],
+						promptsFromMessages(view.messages),
+					),
+				},
 				tabs,
 				activeSessionId,
 				resyncing: { ...current.resyncing, [sessionId]: false },
@@ -494,8 +568,10 @@ export function createAppStore(): AppStore {
 			...current,
 			sessionRecords: {},
 			sessionStates: {},
+			promptHistory: {},
 			tabs: [],
 			activeSessionId: null,
+			closingSessionId: null,
 			sending: {},
 			resyncing: {},
 			restoringTabs: false,
@@ -602,7 +678,14 @@ export function createAppStore(): AppStore {
 		}
 		const becameSettled = next.meta?.isSettled === true && view.meta?.isSettled !== true;
 		if (becameSettled || event.name === "desktop_snapshot") void requestStats(sessionId);
-		if (becameSettled) void loadSessions(record.workspaceId);
+		if (becameSettled) {
+			void loadSessions(record.workspaceId);
+			const pending = pendingApprovalMode.get(sessionId);
+			if (pending) {
+				pendingApprovalMode.delete(sessionId);
+				void restartSessionForApproval(sessionId, pending);
+			}
+		}
 	};
 
 	const loadWorkspaces = async (): Promise<void> => {
@@ -670,13 +753,16 @@ export function createAppStore(): AppStore {
 		options: InstallOptions,
 	): Promise<boolean> => {
 		try {
+			const approvalMode = options.approvalMode ?? resolveApprovalMode(state, workspaceId);
 			const snapshot = await invoke<SessionSnapshot>({
 				op: "session.open",
 				workspaceId,
 				sessionPath,
+				approvalMode,
+				...(options.trustedPath ? { trustedPath: true } : {}),
 			});
 			const listedTitle = state.sessionsByWorkspace[workspaceId]?.find((item) => item.path === sessionPath)?.title;
-			installSnapshot(workspaceId, snapshot, { ...options, title: listedTitle ?? options.title });
+			installSnapshot(workspaceId, snapshot, { ...options, title: listedTitle ?? options.title, approvalMode });
 			void loadSessions(workspaceId);
 			return true;
 		} catch (error) {
@@ -687,15 +773,39 @@ export function createAppStore(): AppStore {
 		}
 	};
 
+	/** Fecha e reabre a sessão com `--resume` para aplicar o novo modo. */
+	const restartSessionForApproval = async (sessionId: string, mode: ApprovalMode): Promise<void> => {
+		const record = state.sessionRecords[sessionId];
+		if (!record?.sessionPath) return;
+		try {
+			await invoke({ op: "session.close", workspaceId: record.workspaceId, sessionId });
+		} catch (error) {
+			notify("error", t("store.approvalRestartFailed", { detail: detailOf(error) }));
+			return;
+		}
+		await openSessionInternal(record.workspaceId, record.sessionPath, {
+			activate: state.activeSessionId === sessionId,
+			quiet: true,
+			trustedPath: true,
+			approvalMode: mode,
+		});
+	};
+
 	const restoreTabsForWorkspace = async (workspaceId: string): Promise<void> => {
 		const wanted = persistedTabs.filter((tab) => tab.workspaceId === workspaceId);
 		if (wanted.length === 0) return;
+		// Só a aba ativa é aberta no boot: cada `session.open` sobe um processo
+		// OMP. As demais continuam persistidas e abrem pelo seletor de sessões.
+		const activeTab =
+			(persistedActiveSessionId
+				? wanted.find((tab) => tab.sessionId === persistedActiveSessionId)
+				: undefined) ?? wanted[0];
 		const epoch = sessionEpoch;
 		patch({ restoringTabs: true });
 		try {
 			const list = state.sessionsByWorkspace[workspaceId] ?? (await loadSessions(workspaceId));
 			if (epoch !== sessionEpoch) return;
-			for (const tab of wanted) {
+			for (const tab of activeTab ? [activeTab] : []) {
 				if (epoch !== sessionEpoch) return;
 				const alreadyOpen =
 					(tab.sessionId && state.sessionRecords[tab.sessionId]) ||
@@ -730,6 +840,7 @@ export function createAppStore(): AppStore {
 						activate: false,
 						quiet: true,
 						title: tab.title,
+						trustedPath: true,
 					});
 					if (epoch !== sessionEpoch) return;
 				}
@@ -769,8 +880,7 @@ export function createAppStore(): AppStore {
 			: null;
 		if (!shell) return;
 		const layout = clampLayout({ ...DEFAULT_LAYOUT, ...((shell.layout ?? {}) as Record<string, unknown>) });
-		const theme: ThemeMode =
-			shell.theme === "dark" || shell.theme === "light" ? shell.theme : "system";
+		const theme: ThemeMode = isThemeMode(shell.theme) ? shell.theme : "system";
 		persistedTabs = Array.isArray(shell.tabs) ? shell.tabs.filter(isPersistedTab) : [];
 		patch({
 			locale: isLocale(shell.locale) ? shell.locale : detectLocale(typeof navigator === "undefined" ? undefined : navigator.language),
@@ -779,6 +889,13 @@ export function createAppStore(): AppStore {
 		patch({
 			layout,
 			theme,
+			accent: normalizeAccent(shell.accent),
+			density: normalizeDensity(shell.density),
+			fontScale: normalizeFontScale(shell.fontScale),
+			tabLayout: normalizeTabLayout(shell.tabLayout),
+			timelineWidth: normalizeTimelineWidth(shell.timelineWidth),
+			reduceMotion: normalizeReduceMotion(shell.reduceMotion),
+			approval: normalizeApprovalSettings(shell.approval),
 			activeWorkspaceId: typeof shell.activeWorkspaceId === "string" ? shell.activeWorkspaceId : null,
 		});
 	};
@@ -1008,8 +1125,13 @@ export function createAppStore(): AppStore {
 				return false;
 			}
 			try {
-				const snapshot = await invoke<SessionSnapshot>({ op: "session.create", workspaceId: target });
-				installSnapshot(target, snapshot, { activate: true });
+				const approvalMode = resolveApprovalMode(state, target);
+				const snapshot = await invoke<SessionSnapshot>({
+					op: "session.create",
+					workspaceId: target,
+					approvalMode,
+				});
+				installSnapshot(target, snapshot, { activate: true, approvalMode });
 				void loadSessions(target);
 				return true;
 			} catch (error) {
@@ -1019,12 +1141,15 @@ export function createAppStore(): AppStore {
 		},
 
 		async openSession(workspaceId: string, sessionPath: string) {
-			return openSessionInternal(workspaceId, sessionPath, { activate: true });
+			// O caminho veio da listagem já autorizada pelo main; o host pode abrir
+			// mesmo quando o inventário do OMP está desatualizado.
+			return openSessionInternal(workspaceId, sessionPath, { activate: true, trustedPath: true });
 		},
 
 		activateSession(sessionId: string) {
-			if (!state.sessionRecords[sessionId]) return;
-			patch({ activeSessionId: sessionId });
+			const record = state.sessionRecords[sessionId];
+			if (!record) return;
+			patch({ activeSessionId: sessionId, activeWorkspaceId: record.workspaceId });
 			schedulePersist();
 			void requestStats(sessionId);
 		},
@@ -1050,6 +1175,8 @@ export function createAppStore(): AppStore {
 				delete states[sessionId];
 				const drafts = { ...current.drafts };
 				delete drafts[sessionId];
+				const promptHistory = { ...current.promptHistory };
+				delete promptHistory[sessionId];
 				const sending = { ...current.sending };
 				delete sending[sessionId];
 				return {
@@ -1059,9 +1186,19 @@ export function createAppStore(): AppStore {
 					sessionRecords: records,
 					sessionStates: states,
 					drafts,
+					promptHistory,
 					sending,
+					closingSessionId:
+						current.closingSessionId === sessionId ? null : current.closingSessionId,
 				};
 			});
+			pendingApprovalMode.delete(sessionId);
+			// Fechar a aba é intencional: ela não deve voltar na próxima restauração.
+			persistedTabs = persistedTabs.filter(
+				(tab) =>
+					tab.sessionId !== sessionId &&
+					(!record.sessionPath || tab.sessionPath !== record.sessionPath),
+			);
 			buffers.delete(sessionId);
 			earlyBuffers.delete(sessionId);
 			schedulePersist();
@@ -1079,6 +1216,14 @@ export function createAppStore(): AppStore {
 			if (state.sending[sessionId]) return false;
 			const trimmed = text.trim();
 			if (!trimmed && attachmentIds.length === 0) return false;
+
+			set((current) => ({
+				...current,
+				promptHistory: {
+					...current.promptHistory,
+					[sessionId]: recordPrompt(current.promptHistory[sessionId] ?? [], trimmed),
+				},
+			}));
 
 			const command: RpcCommandInput =
 				behavior === "steer"
@@ -1468,6 +1613,105 @@ export function createAppStore(): AppStore {
 			schedulePersist();
 		},
 
+		setAccent(accent) {
+			patch({ accent: normalizeAccent(accent) });
+			schedulePersist();
+		},
+
+		setDensity(density) {
+			patch({ density: normalizeDensity(density) });
+			schedulePersist();
+		},
+
+		setFontScale(fontScale) {
+			patch({ fontScale: normalizeFontScale(fontScale) });
+			schedulePersist();
+		},
+
+		setTabLayout(layout) {
+			patch({ tabLayout: normalizeTabLayout(layout) });
+			schedulePersist();
+		},
+
+		setTimelineWidth(width) {
+			patch({ timelineWidth: normalizeTimelineWidth(width) });
+			schedulePersist();
+		},
+
+		setReduceMotion(mode) {
+			patch({ reduceMotion: normalizeReduceMotion(mode) });
+			schedulePersist();
+		},
+
+		moveTab(sessionId, targetIndex) {
+			const from = state.tabs.indexOf(sessionId);
+			if (from < 0) return;
+			const to = Math.max(0, Math.min(state.tabs.length - 1, targetIndex));
+			if (from === to) return;
+			const tabs = [...state.tabs];
+			tabs.splice(from, 1);
+			tabs.splice(to, 0, sessionId);
+			patch({ tabs });
+			schedulePersist();
+		},
+
+		requestCloseSession(sessionId) {
+			if (state.sessionRecords[sessionId]) patch({ closingSessionId: sessionId });
+		},
+
+		cancelCloseSession() {
+			patch({ closingSessionId: null });
+		},
+
+		async confirmCloseSession() {
+			const sessionId = state.closingSessionId;
+			if (!sessionId) return;
+			const ok = await actions.closeSession(sessionId);
+			if (ok) patch({ closingSessionId: null });
+		},
+
+		async setApprovalMode(mode, target = {}) {
+			const projectId = target.global
+				? undefined
+				: (target.workspaceId ?? state.activeWorkspaceId ?? undefined);
+			if (!target.global && !projectId) {
+				// Sem projeto ativo o seletor do rodapé muda o padrão global.
+				return actions.setApprovalMode(mode, { global: true });
+			}
+			const nextApproval: ApprovalSettings = projectId
+				? mode
+					? { ...state.approval, projects: { ...state.approval.projects, [projectId]: mode } }
+					: {
+							...state.approval,
+							projects: Object.fromEntries(
+								Object.entries(state.approval.projects).filter(([id]) => id !== projectId),
+							),
+						}
+				: { ...state.approval, default: mode ?? state.approval.default };
+			set((current) => ({ ...current, approval: nextApproval }));
+			schedulePersist();
+			const desiredFor = (record: SessionRecord): ApprovalMode =>
+				projectId
+					? (mode ?? nextApproval.default)
+					: (nextApproval.projects[record.workspaceId] ?? nextApproval.default);
+			const affected = state.tabs.filter((sessionId) => {
+				const record = state.sessionRecords[sessionId];
+				return Boolean(record && record.approvalMode !== desiredFor(record));
+			});
+			for (const sessionId of affected) {
+				const record = state.sessionRecords[sessionId];
+				if (!record) continue;
+				const desired = desiredFor(record);
+				const view = state.sessionStates[sessionId];
+				if (view && sessionHasActiveWork(view)) {
+					pendingApprovalMode.set(sessionId, desired);
+					notify("info", t("store.approvalPending", { title: record.title ?? sessionId }));
+					continue;
+				}
+				await restartSessionForApproval(sessionId, desired);
+			}
+		},
+
 		toggleTerminal() {
 			actions.setLayout({ terminalOpen: !state.layout.terminalOpen });
 		},
@@ -1535,11 +1779,21 @@ export function createAppStore(): AppStore {
 		async openWorkspaceFile(path) {
 			const workspace = activeWorkspace(state);
 			if (!workspace) return;
+			patch({ filePreview: { workspaceId: workspace.workspaceId, path } });
+		},
+
+		async openFileExternal(path) {
+			const workspace = activeWorkspace(state);
+			if (!workspace) return;
 			try {
 				await invoke({ op: "files.openExternal", workspaceId: workspace.workspaceId, path });
 			} catch (error) {
 				notify("error", t("store.openFileFailed", { detail: detailOf(error) }));
 			}
+		},
+
+		closeFilePreview() {
+			patch({ filePreview: null });
 		},
 	};
 

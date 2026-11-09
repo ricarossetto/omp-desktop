@@ -902,7 +902,9 @@ async function scrollToMessage(
 		log.scrollTop = 0;
 		log.dispatchEvent(new Event("scroll", { bubbles: true }));
 	});
-	for (let attempt = 0; attempt < 200; attempt++) {
+	// A coluna de conversa mais estreita (744 px) aumenta a altura das
+	// mensagens; a varredura precisa de mais passos para chegar ao fim.
+	for (let attempt = 0; attempt < 400; attempt++) {
 		await page.waitForTimeout(50);
 		const state = await page.evaluate(
 			({ targetKey }) => {
@@ -1003,6 +1005,14 @@ test("histórico de ~29 MiB atravessa host/main/preload/renderer sem omitir, tru
 		await expect(l.page.getByText(fixture.lastMarker, { exact: false }).first()).toBeVisible({
 			timeout: 90_000,
 		});
+
+		// A coluna padrão (744 px) deixa as mensagens altas; a varredura
+		// determinística do teste usa a largura ampla.
+		await l.page.getByRole("button", { name: "Configurações" }).click();
+		await l.page.getByRole("tab", { name: "Geral" }).click();
+		await l.page.getByLabel("Largura da conversa").selectOption("wide");
+		await l.page.keyboard.press("Escape");
+		await l.page.waitForTimeout(300);
 
 		const info = await openSessionInfo(l.page);
 		const initial = await probeSnapshot(

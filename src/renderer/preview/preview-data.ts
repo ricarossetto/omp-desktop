@@ -271,6 +271,7 @@ export function previewAppState(withDialogs = false): AppState {
 		sessionStates: { "preview-session": previewSessionState(withDialogs) },
 		tabs: ["preview-session"],
 		activeSessionId: "preview-session",
+		closingSessionId: null,
 		drafts: {
 			"preview-session": {
 				text: "Verifique também o caso de IME no compositor.",
@@ -285,10 +286,20 @@ export function previewAppState(withDialogs = false): AppState {
 				],
 			},
 		},
+		promptHistory: {
+			"preview-session": ["Verifique também o caso de IME no compositor."],
+		},
 		sending: {},
 		resyncing: {},
 		layout: { ...DEFAULT_LAYOUT, terminalOpen: false, rightOpen: true },
 		theme: "dark",
+		accent: null,
+		density: "comfortable",
+		fontScale: 1,
+		tabLayout: "horizontal",
+		timelineWidth: "comfortable",
+		reduceMotion: "system",
+		approval: { default: "write", projects: {} },
 		notices: [],
 		settings: { open: false },
 		modelPickerOpen: false,
@@ -299,5 +310,6 @@ export function previewAppState(withDialogs = false): AppState {
 	unreadSessions: [],
 		composerFocusNonce: 0,
 		rightPanelRequest: 0,
+		filePreview: null,
 	};
 }

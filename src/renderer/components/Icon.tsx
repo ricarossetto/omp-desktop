@@ -24,6 +24,7 @@ export type IconName =
 	| "refresh"
 	| "external"
 	| "lock"
+	| "shield"
 	| "file"
 	| "git"
 	| "paperclip"
@@ -64,6 +65,7 @@ const PATHS: Record<IconName, string> = {
 	refresh: "M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5",
 	external: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
 	lock: "M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3",
+	shield: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
 	file: "M6 3h8l4 4v14H6zM14 3v5h5",
 	git: "M6 4v9M6 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9v3a3 3 0 0 1-3 3h-3a3 3 0 0 0-3 3v1",
 	paperclip: "m20 11-8.5 8.5a4 4 0 0 1-5.66-5.66L14.6 5.1a3 3 0 0 1 4.24 4.24l-8.49 8.49a2 2 0 0 1-2.83-2.83L15 7.5",

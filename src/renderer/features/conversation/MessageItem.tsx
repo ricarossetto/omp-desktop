@@ -17,6 +17,7 @@ export interface MessageItemProps {
 
 function ImageBlock({ block }: { block: Extract<ContentBlock, { type: "image" }> }) {
 	const t = useT();
+	const [open, setOpen] = useState(false);
 	if (block.omitted || !block.data) {
 		return (
 			<div className="message__image-missing">
@@ -24,13 +25,39 @@ function ImageBlock({ block }: { block: Extract<ContentBlock, { type: "image" }>
 			</div>
 		);
 	}
+	const src = `data:${block.mimeType ?? "image/png"};base64,${block.data}`;
 	return (
-		<img
-			className="message__image"
-			src={`data:${block.mimeType ?? "image/png"};base64,${block.data}`}
-			alt={t("message.imageAlt")}
-			loading="lazy"
-		/>
+		<>
+			<button
+				type="button"
+				className="message__image-button"
+				onClick={() => setOpen(true)}
+				aria-label={t("message.openImage")}
+			>
+				<img className="message__image" src={src} alt={t("message.imageAlt")} loading="lazy" />
+			</button>
+			{open ? (
+				<div
+					className="overlay image-lightbox"
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("message.imageAlt")}
+					onMouseDown={(event) => {
+						if (event.target === event.currentTarget) setOpen(false);
+					}}
+				>
+					<button
+						type="button"
+						className="icon-btn image-lightbox__close"
+						aria-label={t("common.close")}
+						onClick={() => setOpen(false)}
+					>
+						<Icon name="close" />
+					</button>
+					<img className="image-lightbox__image" src={src} alt={t("message.imageAlt")} />
+				</div>
+			) : null}
+		</>
 	);
 }
 

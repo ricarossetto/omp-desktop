@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "./api";
+import { CloseSessionDialog } from "./components/CloseSessionDialog";
 import { Toasts } from "./components/Toasts";
 import { DiagnosticsScreen } from "./features/diagnostics/DiagnosticsScreen";
+import { FilePreview } from "./features/files/FilePreview";
 import { Onboarding, onboardingDone } from "./features/onboarding/Onboarding";
 import { StartScreen } from "./features/workspaces/StartScreen";
 import { Shell } from "./layout/Shell";
@@ -9,6 +12,7 @@ import { I18nProvider, useT } from "./i18n";
 import { StoreProvider, useActions, useStore } from "./store/context";
 import type { AppStore } from "./store/create-store";
 import { activeWorkspace } from "./store/state";
+import { applyAccent } from "./styles/accent";
 
 function LoadingScreen({ title, detail }: { title: string; detail: string }) {
 	return (
@@ -41,6 +45,11 @@ function AppContent() {
 	const [showOnboarding, setShowOnboarding] = useState(() => !onboardingDone());
 	const [onboardingForced, setOnboardingForced] = useState(false);
 	const theme = useStore((state) => state.theme);
+	const accent = useStore((state) => state.accent);
+	const density = useStore((state) => state.density);
+	const fontScale = useStore((state) => state.fontScale);
+	const timelineWidth = useStore((state) => state.timelineWidth);
+	const reduceMotion = useStore((state) => state.reduceMotion);
 	const phase = runtime?.phase;
 	const previousPhase = useRef(phase);
 
@@ -66,6 +75,26 @@ function AppContent() {
 		if (theme === "system") delete root.dataset.theme;
 		else root.dataset.theme = theme;
 	}, [theme]);
+
+	useEffect(() => {
+		document.documentElement.dataset.density = density;
+	}, [density]);
+
+	useEffect(() => {
+		document.documentElement.dataset.timeline = timelineWidth;
+	}, [timelineWidth]);
+
+	useEffect(() => {
+		document.documentElement.dataset.reduceMotion = reduceMotion;
+	}, [reduceMotion]);
+
+	useEffect(() => {
+		applyAccent(accent);
+	}, [accent]);
+
+	useEffect(() => {
+		void invoke({ op: "ui.setZoom", factor: fontScale }).catch(() => undefined);
+	}, [fontScale]);
 
 	// Configurações → Geral reabre o assistente sem passar pelo store.
 	useEffect(() => {
@@ -135,6 +164,8 @@ function AppContent() {
 			<TitleBar />
 			<div className="app-frame__body">{content}</div>
 			<Toasts />
+			<FilePreview />
+			<CloseSessionDialog />
 		</div>
 	);
 }

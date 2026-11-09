@@ -15,6 +15,7 @@ import { clampPanelWidths } from "./layout-policy";
 import { RightPanel } from "./RightPanel";
 import { Sidebar, SidebarRail } from "./Sidebar";
 import { Splitter } from "./Splitter";
+import { TabStrip } from "./TabStrip";
 import { StatusBar } from "./StatusBar";
 import { useMediaQuery } from "./use-media-query";
 import "./shell.css";
@@ -27,7 +28,7 @@ function SettingsModal({
 }: {
 	workspaceId: string;
 	sessionId?: string;
-	initialTab?: "models" | "accounts" | "general";
+	initialTab?: "models" | "accounts" | "general" | "approvals" | "shortcuts" | "about";
 	onClose: () => void;
 }) {
 	const view = useStore((state) => (sessionId ? (state.sessionStates[sessionId] ?? null) : null));
@@ -78,6 +79,7 @@ export function Shell() {
 	const layout = useStore((state) => state.layout);
 	const workspace = useStore((state) => activeWorkspace(state));
 	const activeSessionId = useStore((state) => state.activeSessionId);
+	const tabs = useStore((state) => state.tabs);
 	const view = useStore((state) =>
 		state.activeSessionId ? (state.sessionStates[state.activeSessionId] ?? null) : null,
 	);
@@ -171,6 +173,21 @@ export function Shell() {
 				return;
 			}
 
+			if (
+				event.altKey &&
+				!mod &&
+				!event.shiftKey &&
+				(event.key === "ArrowUp" || event.key === "ArrowDown")
+			) {
+				if (tabs.length < 2) return;
+				event.preventDefault();
+				const index = activeSessionId ? tabs.indexOf(activeSessionId) : -1;
+				const step = event.key === "ArrowDown" ? 1 : -1;
+				const next = tabs[(index + step + tabs.length) % tabs.length];
+				if (next) actions.activateSession(next);
+				return;
+			}
+
 			if (!mod || event.altKey) return;
 			const key = event.key.toLowerCase();
 
@@ -194,9 +211,20 @@ export function Shell() {
 				void actions.pickWorkspace();
 				return;
 			}
-			if (!event.shiftKey && key === "n") {
+			if (!event.shiftKey && (key === "n" || key === "t")) {
 				event.preventDefault();
 				if (workspace) void actions.createSession(workspace.workspaceId);
+				return;
+			}
+			if (!event.shiftKey && key === "w") {
+				event.preventDefault();
+				if (settingsOpen || paletteOpen || modelPickerOpen) return;
+				if (activeSessionId) actions.requestCloseSession(activeSessionId);
+				return;
+			}
+			if (key === ",") {
+				event.preventDefault();
+				actions.openSettings();
 				return;
 			}
 			if (key === "`") {
@@ -216,6 +244,7 @@ export function Shell() {
 		paletteOpen,
 		pendingDialogs,
 		settingsOpen,
+		tabs,
 		view,
 		workspace,
 	]);
@@ -266,6 +295,7 @@ export function Shell() {
 			)}
 
 			<div className="shell__main">
+				<TabStrip />
 				<div className="shell__body">
 					<main className="shell__conversation" aria-label={t("shell.conversation")}>
 						{restoringTabs && !view ? (

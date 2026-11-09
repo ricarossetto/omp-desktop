@@ -4,11 +4,14 @@ import type { SessionViewState } from "@shared/session-types";
 import { invoke } from "../../api";
 import { LOCALES, LOCALE_LABELS, isLocale, useI18n, type MessageKey } from "../../i18n";
 import { useActions, useStore } from "../../store/context";
-import type { ThemeMode } from "../../store/state";
+import { FONT_SCALES, isThemeMode } from "../../store/state";
 import { StatusIcon } from "../agents/StatusIcon";
 import { errorCode, errorText, unwrapRpcData } from "../agents/ui-utils";
 import { AccountsTab } from "../accounts/AccountsTab";
 import { OptionalToolsSection } from "../diagnostics/OptionalToolsSection";
+import { AboutTab } from "./AboutTab";
+import { ApprovalsTab } from "./ApprovalsTab";
+import { ShortcutsTab } from "./ShortcutsTab";
 import { ModelPicker, ThinkingLevelControl } from "./ModelPicker";
 import {
 	advancedOptions,
@@ -37,7 +40,13 @@ import {
 } from "./config";
 import "./settings.css";
 
-export type SettingsTab = "models" | "accounts" | "general";
+export type SettingsTab =
+	| "models"
+	| "accounts"
+	| "general"
+	| "approvals"
+	| "shortcuts"
+	| "about";
 
 export interface SettingsScreenProps {
 	workspaceId: string;
@@ -62,6 +71,9 @@ const TAB_LABELS: Record<SettingsTab, MessageKey> = {
 	models: "settings.tab.models",
 	accounts: "settings.tab.accounts",
 	general: "settings.tab.general",
+	approvals: "approval.settingsTab",
+	shortcuts: "settings.tab.shortcuts",
+	about: "settings.tab.about",
 };
 
 function uniquePresetName(snapshot: SettingsSnapshot, base: string): string {
@@ -410,6 +422,12 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 	const actions = useActions();
 	const theme = useStore((value) => value.theme);
 	const locale = useStore((value) => value.locale);
+	const accent = useStore((value) => value.accent);
+	const density = useStore((value) => value.density);
+	const fontScale = useStore((value) => value.fontScale);
+	const tabLayout = useStore((value) => value.tabLayout);
+	const timelineWidth = useStore((value) => value.timelineWidth);
+	const reduceMotion = useStore((value) => value.reduceMotion);
 	const runtime = useStore((value) => value.runtime);
 	const [tab, setTab] = useState<SettingsTab>(initialTab ?? "models");
 	const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
@@ -669,11 +687,26 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 	};
 
 	const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-		if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+		if (
+			event.key !== "ArrowLeft" &&
+			event.key !== "ArrowRight" &&
+			event.key !== "ArrowUp" &&
+			event.key !== "ArrowDown"
+		) {
+			return;
+		}
 		event.preventDefault();
-		const order: SettingsTab[] = ["models", "accounts", "general"];
+		const order: SettingsTab[] = [
+			"models",
+			"accounts",
+			"general",
+			"approvals",
+			"shortcuts",
+			"about",
+		];
 		const index = order.indexOf(tab);
-		const next = order[(index + (event.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
+		const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
+		const next = order[(index + step + order.length) % order.length];
 		setTab(next);
 		document.getElementById(`omp-settings-tab-${next}`)?.focus();
 	};
@@ -728,8 +761,15 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 				</div>
 			</header>
 
-			<div className="omp-settings-tabs" role="tablist" aria-label={t("settings.tabsLabel")} onKeyDown={onTabKeyDown}>
-				{(["models", "accounts", "general"] as const).map(value => (
+			<div className="omp-settings-layout">
+			<div
+				className="omp-settings-tabs omp-settings-nav"
+				role="tablist"
+				aria-label={t("settings.tabsLabel")}
+				aria-orientation="vertical"
+				onKeyDown={onTabKeyDown}
+			>
+				{(["models", "accounts", "general", "approvals", "shortcuts", "about"] as const).map(value => (
 					<button
 						key={value}
 						id={`omp-settings-tab-${value}`}
@@ -746,6 +786,7 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 				))}
 			</div>
 
+			<div className="omp-settings-panels">
 			{conflict ? (
 				<div className="omp-message omp-message-warning" role="alert">
 					<StatusIcon kind="warning" />
@@ -1063,14 +1104,130 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 									value={theme}
 									onChange={(event) => {
 										const next = event.target.value;
-										if (next === "dark" || next === "light" || next === "system") {
-											actions.setTheme(next as ThemeMode);
+										if (isThemeMode(next)) actions.setTheme(next);
+									}}
+								>
+									<option value="system">{t("settings.general.themeSystem")}</option>
+									<option value="dark">{t("settings.general.themeDark")}</option>
+									<option value="light">{t("settings.general.themeLight")}</option>
+									<option value="aurora">{t("settings.general.themeAurora")}</option>
+									<option value="phosphor">{t("settings.general.themePhosphor")}</option>
+									<option value="daylight">{t("settings.general.themeDaylight")}</option>
+								</select>
+							</label>
+							<label className="omp-field">
+								<span>{t("settings.general.accent")}</span>
+								<div className="omp-row">
+									<input
+										type="color"
+										className="omp-color-input"
+										value={accent ?? "#8af0c8"}
+										aria-label={t("settings.general.accent")}
+										onChange={(event) => actions.setAccent(event.target.value)}
+									/>
+									<button
+										type="button"
+										className="omp-button omp-button-small"
+										disabled={!accent}
+										onClick={() => actions.setAccent(null)}
+									>
+										{t("settings.general.accentReset")}
+									</button>
+								</div>
+								<span className="omp-hint">{t("settings.general.accentHint")}</span>
+							</label>
+							<label className="omp-field">
+								<span>{t("settings.general.density")}</span>
+								<select
+									value={density}
+									aria-label={t("settings.general.density")}
+									onChange={(event) =>
+										actions.setDensity(
+											event.target.value === "compact" ? "compact" : "comfortable",
+										)
+									}
+								>
+									<option value="comfortable">
+										{t("settings.general.densityComfortable")}
+									</option>
+									<option value="compact">{t("settings.general.densityCompact")}</option>
+								</select>
+							</label>
+							<label className="omp-field">
+								<span>{t("settings.general.fontScale")}</span>
+								<select
+									value={String(fontScale)}
+									aria-label={t("settings.general.fontScale")}
+									onChange={(event) => actions.setFontScale(Number(event.target.value))}
+								>
+									{FONT_SCALES.map((value) => (
+										<option key={value} value={value}>
+											{Math.round(value * 100)}%
+										</option>
+									))}
+								</select>
+							</label>
+							<label className="omp-field">
+								<span>{t("settings.general.tabLayout")}</span>
+								<select
+									value={tabLayout}
+									aria-label={t("settings.general.tabLayout")}
+									onChange={(event) =>
+										actions.setTabLayout(
+											event.target.value === "vertical" ? "vertical" : "horizontal",
+										)
+									}
+								>
+									<option value="horizontal">
+										{t("settings.general.tabLayoutHorizontal")}
+									</option>
+									<option value="vertical">
+										{t("settings.general.tabLayoutVertical")}
+									</option>
+								</select>
+							</label>
+							<label className="omp-field">
+								<span>{t("settings.general.timelineWidth")}</span>
+								<select
+									value={timelineWidth}
+									aria-label={t("settings.general.timelineWidth")}
+									onChange={(event) => {
+										const value = event.target.value;
+										if (
+											value === "focused" ||
+											value === "comfortable" ||
+											value === "wide"
+										) {
+											actions.setTimelineWidth(value);
 										}
 									}}
 								>
-									<option value="dark">{t("settings.general.themeDark")}</option>
-									<option value="light">{t("settings.general.themeLight")}</option>
-									<option value="system">{t("settings.general.themeSystem")}</option>
+									<option value="focused">
+										{t("settings.general.timelineFocused")}
+									</option>
+									<option value="comfortable">
+										{t("settings.general.timelineComfortable")}
+									</option>
+									<option value="wide">{t("settings.general.timelineWide")}</option>
+								</select>
+							</label>
+							<label className="omp-field">
+								<span>{t("settings.general.reduceMotion")}</span>
+								<select
+									value={reduceMotion}
+									aria-label={t("settings.general.reduceMotion")}
+									onChange={(event) => {
+										const value = event.target.value;
+										if (value === "system" || value === "on" || value === "off") {
+											actions.setReduceMotion(value);
+										}
+									}}
+								>
+									<option value="system">
+										{t("settings.general.reduceMotionSystem")}
+									</option>
+									<option value="on">{t("settings.general.reduceMotionOn")}</option>
+									<option value="off">{t("settings.general.reduceMotionOff")}</option>
 								</select>
 							</label>
 							<label className="omp-field">
@@ -1191,6 +1348,38 @@ export function SettingsScreen({ workspaceId, sessionId, state, initialTab }: Se
 							))
 						)}
 					</section>
+			</div>
+
+			<div
+				id="omp-settings-panel-approvals"
+				role="tabpanel"
+				aria-labelledby="omp-settings-tab-approvals"
+				className="omp-settings-panel"
+				hidden={tab !== "approvals"}
+			>
+				<ApprovalsTab />
+			</div>
+
+			<div
+				id="omp-settings-panel-shortcuts"
+				role="tabpanel"
+				aria-labelledby="omp-settings-tab-shortcuts"
+				className="omp-settings-panel"
+				hidden={tab !== "shortcuts"}
+			>
+				<ShortcutsTab />
+			</div>
+
+			<div
+				id="omp-settings-panel-about"
+				role="tabpanel"
+				aria-labelledby="omp-settings-tab-about"
+				className="omp-settings-panel"
+				hidden={tab !== "about"}
+			>
+				<AboutTab />
+			</div>
+			</div>
 			</div>
 
 			{pickerOpen && sessionId ? (

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { APPROVAL_MODES } from "@shared/session-types";
 import { invoke } from "../api";
 import { Icon } from "../components/Icon";
 import { errorText } from "../features/agents/ui-utils";
+import { approvalModeDescription, approvalModeLabel } from "../features/approval/approval-mode";
 import { useI18n, useT, type MessageKey } from "../i18n";
 import { useActions, useStore } from "../store/context";
-import { sessionHasActiveWork } from "../store/state";
+import { resolveApprovalMode, sessionHasActiveWork } from "../store/state";
 import { statusFor } from "../store/session-status";
 
 const STATUS_KEYS: Record<string, MessageKey> = {
@@ -32,10 +34,19 @@ export function StatusBar() {
 	const sessionId = useStore((state) => state.activeSessionId);
 	const view = useStore((state) => (state.activeSessionId ? (state.sessionStates[state.activeSessionId] ?? null) : null));
 	const resyncing = useStore((state) => (state.activeSessionId ? state.resyncing[state.activeSessionId] === true : false));
+	const approvalSettings = useStore((state) => state.approval);
+	const activeRecord = useStore((state) =>
+		state.activeSessionId ? (state.sessionRecords[state.activeSessionId] ?? null) : null,
+	);
+	const effectiveApproval =
+		activeRecord?.approvalMode ?? resolveApprovalMode({ approval: approvalSettings }, workspaceId);
 	const [open, setOpen] = useState(false);
+	const [approvalOpen, setApprovalOpen] = useState(false);
 	const [compacting, setCompacting] = useState(false);
 	const popRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
+	const approvalPopRef = useRef<HTMLDivElement>(null);
+	const approvalButtonRef = useRef<HTMLButtonElement>(null);
 
 	const formatTokens = (value: number | undefined): string | null => {
 		if (value === undefined || !Number.isFinite(value)) return null;
@@ -88,6 +99,32 @@ export function StatusBar() {
 			document.removeEventListener("keydown", onKey, true);
 		};
 	}, [open]);
+
+	useEffect(() => {
+		if (!approvalOpen) return;
+		const onDown = (event: PointerEvent) => {
+			const target = event.target as Node;
+			if (
+				!approvalPopRef.current?.contains(target) &&
+				!approvalButtonRef.current?.contains(target)
+			) {
+				setApprovalOpen(false);
+			}
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.stopPropagation();
+				setApprovalOpen(false);
+				approvalButtonRef.current?.focus();
+			}
+		};
+		document.addEventListener("pointerdown", onDown);
+		document.addEventListener("keydown", onKey, true);
+		return () => {
+			document.removeEventListener("pointerdown", onDown);
+			document.removeEventListener("keydown", onKey, true);
+		};
+	}, [approvalOpen]);
 
 	const compact = async () => {
 		if (!workspaceId || !sessionId) return;
@@ -145,6 +182,68 @@ export function StatusBar() {
 			<span className="statusbar__item" title={t("shell.estimatedCostTitle")}>
 				{t("shell.estimatedCost")} <span className="statusbar__value">{costLabel}</span>
 			</span>
+
+			<div className="statusbar__approval-wrap">
+				<button
+					ref={approvalButtonRef}
+					type="button"
+					className={`statusbar__approval${effectiveApproval === "yolo" ? " statusbar__item--warning" : ""}`}
+					aria-expanded={approvalOpen}
+					aria-haspopup="menu"
+					title={t("approval.modeTitle")}
+					onClick={() => {
+						setApprovalOpen((value) => !value);
+						setOpen(false);
+					}}
+				>
+					<Icon name="shield" className="icon--sm" />
+					{t("approval.mode")}{" "}
+					<span className="statusbar__value">{approvalModeLabel(effectiveApproval, t)}</span>
+				</button>
+				{approvalOpen ? (
+					<div
+						ref={approvalPopRef}
+						className="statusbar__pop statusbar__approval-pop"
+						role="menu"
+						aria-label={t("approval.modeTitle")}
+					>
+						<div className="statusbar__pop-head">
+							<strong>{t("approval.modeTitle")}</strong>
+						</div>
+						{APPROVAL_MODES.map((mode) => (
+							<button
+								key={mode}
+								type="button"
+								role="menuitemradio"
+								aria-checked={mode === effectiveApproval}
+								className={`approval-option${mode === "yolo" ? " approval-option--warn" : ""}`}
+								onClick={() => {
+									setApprovalOpen(false);
+									void actions.setApprovalMode(
+										mode,
+										workspaceId ? { workspaceId } : { global: true },
+									);
+								}}
+							>
+								<span className="approval-option__label">
+									<Icon
+										name={mode === effectiveApproval ? "check" : "shield"}
+										className="icon--sm"
+									/>
+									{approvalModeLabel(mode, t)}
+								</span>
+								<span className="approval-option__hint">
+									{approvalModeDescription(mode, t)}
+								</span>
+							</button>
+						))}
+						<p className="muted text-xs">{t("approval.restartHint")}</p>
+						{effectiveApproval === "yolo" ? (
+							<p className="statusbar__warning text-xs">{t("approval.yoloWarning")}</p>
+						) : null}
+					</div>
+				) : null}
+			</div>
 
 			<span className="statusbar__spacer" />
 

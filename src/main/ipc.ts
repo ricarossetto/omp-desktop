@@ -27,8 +27,23 @@ import {
 } from "../shared/contracts";
 import type { DependencyKind } from "../shared/dependency-install-types";
 import type { SessionSnapshot } from "../shared/session-types";
-import { readWorkspaceFile, externalOpenMode, isExecutableFile, resolveFileForExternalOpen } from "./files";
-import { gitCommit, gitDiff, gitStage, gitStatus, gitUnstage, GitError, type GitCommitResult } from "./git";
+import {
+	readWorkspaceFile,
+	readWorkspaceImage,
+	externalOpenMode,
+	isExecutableFile,
+	resolveFileForExternalOpen,
+} from "./files";
+import {
+	gitCommit,
+	gitDiff,
+	gitLog,
+	gitStage,
+	gitStatus,
+	gitUnstage,
+	GitError,
+	type GitCommitResult,
+} from "./git";
 import { HostClientError } from "./host-client";
 import { isAuthorizedSender, isAllowedRendererUrl, type AuthorizedWindow } from "./ipc-guard";
 import { assertWorkspaceDirectory, PathValidationError } from "./paths";
@@ -446,6 +461,12 @@ export class MainBridge {
 			case "ui.setState":
 				return await this.deps.uiState.setState(request.state);
 
+			case "ui.setZoom": {
+				const win = this.requireWindow();
+				win.webContents.setZoomFactor(request.factor);
+				return { factor: request.factor };
+			}
+
 			case "workspace.pick": {
 				const win = this.requireWindow();
 				const result = await dialog.showOpenDialog(win, {
@@ -551,6 +572,7 @@ export class MainBridge {
 				this.requireWorkspace(request.workspaceId);
 				const snapshot = await this.deps.requestHost<unknown>("session.create", {
 					workspaceId: request.workspaceId,
+					approvalMode: request.approvalMode,
 				});
 				return this.registerSnapshot(request.workspaceId, snapshot);
 			}
@@ -566,6 +588,8 @@ export class MainBridge {
 				const snapshot = await this.deps.requestHost<unknown>("session.open", {
 					workspaceId: request.workspaceId,
 					sessionPath: request.sessionPath,
+					trustedPath: request.trustedPath === true,
+					approvalMode: request.approvalMode,
 				});
 				return this.registerSnapshot(request.workspaceId, snapshot);
 			}
@@ -755,9 +779,19 @@ export class MainBridge {
 				return (await gitCommit(workspace.path, request.message)) satisfies GitCommitResult;
 			}
 
+			case "git.log": {
+				const workspace = await this.requireAvailableWorkspace(request.workspaceId);
+				return await gitLog(workspace.path, request.limit);
+			}
+
 			case "files.read": {
 				const workspace = await this.requireAvailableWorkspace(request.workspaceId);
 				return await readWorkspaceFile(workspace.path, request.path);
+			}
+
+			case "files.readImage": {
+				const workspace = await this.requireAvailableWorkspace(request.workspaceId);
+				return await readWorkspaceImage(workspace.path, request.path);
 			}
 
 			case "files.openExternal": {

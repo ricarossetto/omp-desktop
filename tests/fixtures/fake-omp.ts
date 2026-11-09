@@ -75,6 +75,9 @@ function record(entry: unknown): void {
 	}
 }
 
+// O harness usa o argv para provar flags repassadas pelo host (approval-mode).
+record({ type: "argv", argv: process.argv.slice(2) });
+
 // ---------------------------------------------------------------------------
 // Modo CLI (`omp config`, `omp models ls`, `omp usage`), usado pelo host sem
 // sessão RPC. Mantém o estado em FAKE_OMP_CONFIG_FILE para que `config set`
@@ -618,7 +621,10 @@ function state(): Record<string, unknown> {
 function assistantContent(): unknown[] {
 	return [
 		{ type: "thinking", thinking: "vou verificar o arquivo" },
-		{ type: "text", text: "Verificando." },
+		{
+			type: "text",
+			text: "Verificando.\n\n[smoke-omp.txt](smoke-omp.txt) · [preview.png](preview.png)",
+		},
 		{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "smoke-omp.txt" }, intent: "ler arquivo" },
 	];
 }
@@ -871,7 +877,10 @@ async function afterPrompt(id: string | undefined, promptId: string): Promise<vo
 			messageId,
 			message: assistantMessage(messageId, [
 				{ type: "thinking", thinking: "vou verificar o arquivo" },
-				{ type: "text", text: "Verificado." },
+				{
+					type: "text",
+					text: "Verificado.\n\n[smoke-omp.txt](smoke-omp.txt) · [preview.png](preview.png)",
+				},
 				{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "smoke-omp.txt" } },
 			]),
 		});

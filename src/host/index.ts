@@ -42,6 +42,7 @@ import {
 	type RuntimeStatus,
 } from "../shared/contracts";
 import { isRecord } from "../shared/session-state";
+import { isApprovalMode } from "../shared/session-types";
 import { readAccountUsage } from "./accounts";
 import { AttachmentStore } from "./attachments";
 import { JsonlWriter } from "./jsonl-writer";
@@ -237,11 +238,15 @@ async function main(): Promise<void> {
 		dataDir,
 	});
 	// Restaura as abas persistidas sem prompt, fora do caminho crítico do boot.
-	setTimeout(() => {
-		void sessions.startRestore().catch((error: unknown) => {
-			logger.warn("abas.restaurar_geral_falhou", { message: (error as Error).message });
-		});
-	}, 0);
+	// No app desktop a interface restaura só a aba ativa (OMP_DESKTOP_LAZY_TABS):
+	// cada aba restaurada sobe um processo OMP e o conjunto esgota a memória.
+	if (process.env.OMP_DESKTOP_LAZY_TABS !== "1") {
+		setTimeout(() => {
+			void sessions.startRestore().catch((error: unknown) => {
+				logger.warn("abas.restaurar_geral_falhou", { message: (error as Error).message });
+			});
+		}, 0);
+	}
 
 	await handleStdin(
 		writer,
@@ -524,13 +529,19 @@ async function routeRequest(op: string, payload: unknown, context: RouteContext)
 		}
 		case "session.create": {
 			const data = validateDesktopPayload(op, payload);
-			return await context.sessions.create(stringField(data, "workspaceId", "o projeto"));
+			return await context.sessions.create(stringField(data, "workspaceId", "o projeto"), {
+				approvalMode: isApprovalMode(data.approvalMode) ? data.approvalMode : undefined,
+			});
 		}
 		case "session.open": {
 			const data = validateDesktopPayload(op, payload);
 			return await context.sessions.open(
 				stringField(data, "workspaceId", "o projeto"),
 				stringField(data, "sessionPath", "a sessão"),
+				{
+					trustedPath: data.trustedPath === true,
+					approvalMode: isApprovalMode(data.approvalMode) ? data.approvalMode : undefined,
+				},
 			);
 		}
 		case "session.close": {

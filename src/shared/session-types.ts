@@ -4,6 +4,15 @@
  */
 import type { DesktopEvent } from "./contracts";
 
+/** Modos de aprovação de ferramentas do OMP (`--approval-mode`). */
+export const APPROVAL_MODES = ["always-ask", "always-ask-cached", "write", "yolo"] as const;
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
+export const DEFAULT_APPROVAL_MODE: ApprovalMode = "write";
+
+export function isApprovalMode(value: unknown): value is ApprovalMode {
+	return typeof value === "string" && (APPROVAL_MODES as readonly string[]).includes(value);
+}
+
 export type ContentBlock =
 	| { type: "text"; text: string }
 	| { type: "thinking"; thinking: string }
@@ -175,4 +184,6 @@ export type ApplyEvent = (state: SessionViewState, event: DesktopEvent) => Sessi
 export interface SessionSnapshot {
 	state: SessionViewState;
 	sessionPath?: string;
+	/** Modo com que o processo OMP desta sessão está rodando. */
+	approvalMode?: ApprovalMode;
 }

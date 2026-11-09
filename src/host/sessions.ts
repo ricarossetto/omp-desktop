@@ -31,14 +31,16 @@ import {
 	createSessionState,
 	isRecord,
 } from "../shared/session-state";
-import type {
-	AgentRow,
-	ChatMessage,
-	PendingDialog,
-	SessionSnapshot,
-	SessionStatus,
-	SessionViewState,
-	ToolExecution,
+import {
+	DEFAULT_APPROVAL_MODE,
+	type ApprovalMode,
+	type AgentRow,
+	type ChatMessage,
+	type PendingDialog,
+	type SessionSnapshot,
+	type SessionStatus,
+	type SessionViewState,
+	type ToolExecution,
 } from "../shared/session-types";
 import type { AttachmentStore } from "./attachments";
 import { commandFits } from "./attachments";
@@ -141,6 +143,7 @@ export interface HostSession {
 	transport?: OmpTransport;
 	state: SessionViewState;
 	sessionPath?: string;
+	approvalMode: ApprovalMode;
 	supportsImages: boolean;
 	ready: boolean;
 	closed: boolean;
@@ -235,6 +238,21 @@ export class SessionsService {
 			});
 		}
 		const listed = new Set(items.map((item) => pathKey(item.path)));
+		// Abas persistidas entram na listagem mesmo que o inventário do OMP não
+		// as devolva (fixture, versão diferente ou listagem indisponível). Sem
+		// isso a restauração preguiçosa não teria como reabrir a aba ativa.
+		for (const tab of await this.readTabsFile()) {
+			if (tab.workspaceId !== workspaceId) continue;
+			const key = pathKey(tab.sessionPath);
+			if (listed.has(key)) continue;
+			listed.add(key);
+			items.push({
+				path: tab.sessionPath,
+				id: path.basename(tab.sessionPath, path.extname(tab.sessionPath)),
+				cwd: tab.cwd || workspace.path,
+				modified: Date.now(),
+			} as InventoryItem);
+		}
 		// Sessões que já abrimos entram na lista mesmo se o inventário do OMP estiver
 		// desatualizado (ex.: arquivo criado por outra versão): sem isso a aba
 		// restaurada não teria como ser reanexada pela interface.
@@ -394,12 +412,20 @@ export class SessionsService {
 		return resolved;
 	}
 
-	async create(workspaceId: string): Promise<SessionSnapshot> {
+	async create(
+		workspaceId: string,
+		options: { approvalMode?: ApprovalMode } = {},
+	): Promise<SessionSnapshot> {
 		const workspace = await this.options.workspaces.require(workspaceId);
 		const key = `new:${workspace.workspaceId}`;
 		const running = this.opening.get(key);
 		if (running) return running;
-		const task = this.spawnFor(workspace, undefined).finally(() => this.opening.delete(key));
+		const task = this.spawnFor(
+			workspace,
+			undefined,
+			undefined,
+			options.approvalMode ?? DEFAULT_APPROVAL_MODE,
+		).finally(() => this.opening.delete(key));
 		this.opening.set(key, task);
 		return task;
 	}
@@ -407,7 +433,7 @@ export class SessionsService {
 	async open(
 		workspaceId: string,
 		sessionPath: string,
-		options: { profile?: string; trustedPath?: boolean } = {},
+		options: { profile?: string; trustedPath?: boolean; approvalMode?: ApprovalMode } = {},
 	): Promise<SessionSnapshot> {
 		const workspace = await this.options.workspaces.require(workspaceId);
 		const profile = options.profile ?? this.options.defaultProfile;
@@ -451,7 +477,12 @@ export class SessionsService {
 					"O OMP não conseguiu confirmar se esta sessão está em uso por outro processo. Nada foi aberto; tente novamente após fechar os outros processos do OMP.",
 				);
 			}
-			return this.spawnFor(workspace, match.path, profile);
+			return this.spawnFor(
+				workspace,
+				match.path,
+				profile,
+				options.approvalMode ?? DEFAULT_APPROVAL_MODE,
+			);
 		})().finally(() => this.opening.delete(key));
 		this.opening.set(key, task);
 		return task;
@@ -461,6 +492,7 @@ export class SessionsService {
 		workspace: WorkspaceDto,
 		resumePath: string | undefined,
 		profileOverride?: string,
+		approvalMode: ApprovalMode = DEFAULT_APPROVAL_MODE,
 	): Promise<SessionSnapshot> {
 		const ompPath = await this.requireOmpPath();
 		const profile = profileOverride ?? this.options.defaultProfile;
@@ -472,6 +504,7 @@ export class SessionsService {
 			generation,
 			profile,
 			resumePath,
+			args: [`--approval-mode=${approvalMode}`],
 			env: this.options.env,
 			requestTimeoutMs: this.options.requestTimeoutMs,
 			onExit: (info) => {
@@ -535,6 +568,7 @@ export class SessionsService {
 			transport,
 			state,
 			sessionPath: reportedFile ?? resumePath,
+			approvalMode,
 			supportsImages: false,
 			ready: false,
 			closed: false,
@@ -767,7 +801,11 @@ export class SessionsService {
 
 	async snapshot(workspaceId: string, sessionId: string): Promise<SessionSnapshot> {
 		const session = this.requireSession(workspaceId, sessionId);
-		return { state: session.state, sessionPath: session.sessionPath };
+		return {
+			state: session.state,
+			sessionPath: session.sessionPath,
+			approvalMode: session.approvalMode,
+		};
 	}
 
 	async close(workspaceId: string, sessionId: string): Promise<{ closed: true }> {
@@ -1614,27 +1652,30 @@ export class SessionsService {
 		return this.restorePromise;
 	}
 
-	async restoreTabs(): Promise<void> {
-		let tabs: TabRecord[] = [];
+	/** Abas persistidas em `tabs.json`; vazio quando o arquivo não existe/é inválido. */
+	private async readTabsFile(): Promise<TabRecord[]> {
 		try {
 			const raw = JSON.parse(await fs.promises.readFile(this.tabsFile, "utf8")) as unknown;
-			if (isRecord(raw) && Array.isArray(raw.tabs)) {
-				tabs = raw.tabs
-					.filter(isRecord)
-					.map((item) => ({
-						workspaceId: typeof item.workspaceId === "string" ? item.workspaceId : "",
-						sessionPath: typeof item.sessionPath === "string" ? item.sessionPath : "",
-						cwd: typeof item.cwd === "string" ? item.cwd : "",
-						profile:
-							typeof item.profile === "string" && item.profile.trim().length > 0
-								? item.profile.trim()
-								: undefined,
-					}))
-					.filter((item) => item.workspaceId && item.sessionPath);
-			}
+			if (!isRecord(raw) || !Array.isArray(raw.tabs)) return [];
+			return raw.tabs
+				.filter(isRecord)
+				.map((item) => ({
+					workspaceId: typeof item.workspaceId === "string" ? item.workspaceId : "",
+					sessionPath: typeof item.sessionPath === "string" ? item.sessionPath : "",
+					cwd: typeof item.cwd === "string" ? item.cwd : "",
+					profile:
+						typeof item.profile === "string" && item.profile.trim().length > 0
+							? item.profile.trim()
+							: undefined,
+				}))
+				.filter((item) => item.workspaceId && item.sessionPath);
 		} catch {
-			return;
+			return [];
 		}
+	}
+
+	async restoreTabs(): Promise<void> {
+		const tabs = await this.readTabsFile();
 		if (tabs.length === 0) return;
 		// Lista desejada: abas que abriram e abas que falharam por motivo
 		// transitório (lease/transporte) continuam para a próxima abertura. Só

@@ -151,6 +151,7 @@
 	--terminal-height: 240px;
 	--topbar-height: 48px;
 	--titlebar-height: 36px;
+	--conversation-width: 744px;
 
 	--focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 
@@ -158,16 +159,163 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	:root {
+	:root:not([data-reduce-motion="off"]) {
 		--transition-fast: 0ms linear;
 	}
 
-	*,
-	*::before,
-	*::after {
+	:root:not([data-reduce-motion="off"]) *,
+	:root:not([data-reduce-motion="off"]) *::before,
+	:root:not([data-reduce-motion="off"]) *::after {
 		animation-duration: 0.001ms !important;
 		animation-iteration-count: 1 !important;
 		scroll-behavior: auto !important;
 		transition-duration: 0.001ms !important;
 	}
+}
+
+:root[data-reduce-motion="on"] {
+	--transition-fast: 0ms linear;
+}
+
+:root[data-reduce-motion="on"] *,
+:root[data-reduce-motion="on"] *::before,
+:root[data-reduce-motion="on"] *::after {
+	animation-duration: 0.001ms !important;
+	animation-iteration-count: 1 !important;
+	scroll-behavior: auto !important;
+	transition-duration: 0.001ms !important;
+}
+
+:root[data-timeline="focused"] {
+	--conversation-width: 488px;
+}
+
+:root[data-timeline="comfortable"] {
+	--conversation-width: 744px;
+}
+
+:root[data-timeline="wide"] {
+	--conversation-width: 1000px;
+}
+
+/* ── Temas do apoc: aurora, phosphor e daylight ─────────────────────────── */
+:root[data-theme="aurora"] {
+	color-scheme: dark;
+	--bg: #0b0d14;
+	--panel: #11141d;
+	--panel-raised: #161a27;
+	--panel-sunken: #0d1019;
+	--text: #e6e9f2;
+	--muted: #7b8298;
+	--border: #1c2030;
+	--border-strong: #2a3045;
+	--accent: #8af0c8;
+	--accent-strong: #a7f7d9;
+	--accent-contrast: #06120d;
+	--accent-soft: rgba(138, 240, 200, 0.12);
+	--hover: #1a1f2e;
+	--pressed: #20263a;
+	--selected: rgba(138, 240, 200, 0.16);
+	--success: #8af0c8;
+	--success-strong: #a7f7d9;
+	--success-soft: rgba(138, 240, 200, 0.12);
+	--warning: #ffc56e;
+	--warning-strong: #ffd79a;
+	--warning-soft: rgba(255, 197, 110, 0.12);
+	--error: #ff8896;
+	--error-strong: #ffaab4;
+	--error-soft: rgba(255, 136, 150, 0.12);
+	--info: #6ee7ff;
+	--info-soft: rgba(110, 231, 255, 0.12);
+	--border-control: #5c6480;
+	--shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+	--shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+	--backdrop: rgba(3, 5, 8, 0.66);
+	--code-bg: #0d1019;
+	--scrollbar: #2a3045;
+	--scrollbar-hover: #3a415a;
+}
+
+:root[data-theme="phosphor"] {
+	color-scheme: dark;
+	--bg: #050807;
+	--panel: #07100a;
+	--panel-raised: #0b1a12;
+	--panel-sunken: #04090a;
+	--text: #b5ff8a;
+	--muted: #4f9c49;
+	--border: #143020;
+	--border-strong: #1f4632;
+	--accent: #c4ff3f;
+	--accent-strong: #d6ff7a;
+	--accent-contrast: #0a1400;
+	--accent-soft: rgba(196, 255, 63, 0.14);
+	--hover: #0f2218;
+	--pressed: #143025;
+	--selected: rgba(196, 255, 63, 0.18);
+	--success: #c4ff3f;
+	--success-strong: #d6ff7a;
+	--success-soft: rgba(196, 255, 63, 0.14);
+	--warning: #ffd24a;
+	--warning-strong: #ffe38a;
+	--warning-soft: rgba(255, 210, 74, 0.12);
+	--error: #ff6eaa;
+	--error-strong: #ff9cc4;
+	--error-soft: rgba(255, 110, 170, 0.12);
+	--info: #58f0e0;
+	--info-soft: rgba(88, 240, 224, 0.12);
+	--border-control: #4f9c49;
+	--shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+	--shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.35);
+	--backdrop: rgba(0, 4, 2, 0.72);
+	--code-bg: #04090a;
+	--scrollbar: #1f4632;
+	--scrollbar-hover: #2c6044;
+}
+
+:root[data-theme="daylight"] {
+	color-scheme: light;
+	--bg: #f6f3eb;
+	--panel: #ffffff;
+	--panel-raised: #faf7ef;
+	--panel-sunken: #f0ebdd;
+	--text: #14181f;
+	--muted: #5e6478;
+	--border: #ddd5c2;
+	--border-strong: #c7bea8;
+	--accent: #1f8a5b;
+	--accent-strong: #145c3d;
+	--accent-contrast: #ffffff;
+	--accent-soft: rgba(31, 138, 91, 0.12);
+	--hover: #f0ebdd;
+	--pressed: #e8e1cf;
+	--selected: rgba(31, 138, 91, 0.16);
+	--success: #1f8a5b;
+	--success-strong: #145c3d;
+	--success-soft: rgba(31, 138, 91, 0.12);
+	--warning: #c68a1e;
+	--warning-strong: #8a5c0a;
+	--warning-soft: rgba(198, 138, 30, 0.12);
+	--error: #c04a56;
+	--error-strong: #8f2f39;
+	--error-soft: rgba(192, 74, 86, 0.12);
+	--info: #1f7a8c;
+	--info-soft: rgba(31, 122, 140, 0.12);
+	--border-control: #8a8fa0;
+	--shadow: 0 12px 32px rgba(20, 24, 31, 0.18);
+	--shadow-soft: 0 2px 8px rgba(20, 24, 31, 0.12);
+	--backdrop: rgba(20, 24, 31, 0.35);
+	--code-bg: #fbfcfd;
+	--scrollbar: #c7bea8;
+	--scrollbar-hover: #a89e86;
+}
+
+/* Densidade compacta: mesmos componentes, intervalos menores. */
+:root[data-density="compact"] {
+	--space-1: 2px;
+	--space-2: 6px;
+	--space-3: 10px;
+	--space-4: 14px;
+	--space-5: 18px;
+	--space-6: 22px;
 }

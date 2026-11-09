@@ -348,8 +348,8 @@ export function AgentsPanel({ state }: { state: SessionViewState }) {
 		async (agent: AgentRow, options: { replace?: boolean } = {}) => {
 			const key = agent.key;
 			if (!agent.id) {
+				// Só o transcript selecionado fica em memória: o painel exibe um por vez.
 				setTranscripts(previous => ({
-					...previous,
 					[key]: {
 						items: previous[key]?.items ?? [],
 						loading: false,
@@ -362,7 +362,6 @@ export function AgentsPanel({ state }: { state: SessionViewState }) {
 			if (current?.loading) return;
 			const fromByte = options.replace ? 0 : (current?.nextByte ?? 0);
 			setTranscripts(previous => ({
-				...previous,
 				[key]: {
 					...(previous[key] ?? { items: [] }),
 					loading: true,
@@ -386,7 +385,6 @@ export function AgentsPanel({ state }: { state: SessionViewState }) {
 						locale,
 					});
 					return {
-						...previous,
 						[key]: {
 							items,
 							nextByte: page.nextByte,
@@ -399,7 +397,6 @@ export function AgentsPanel({ state }: { state: SessionViewState }) {
 			} catch (error) {
 				if (sessionRef.current !== state.sessionId) return;
 				setTranscripts(previous => ({
-					...previous,
 					[key]: {
 						...(previous[key] ?? { items: [] }),
 						loading: false,

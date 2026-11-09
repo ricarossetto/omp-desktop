@@ -1,6 +1,11 @@
 import { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GitDiffResult, GitFileStatus, GitStatusResult } from "@shared/contracts";
+import type {
+	GitCommitSummary,
+	GitDiffResult,
+	GitFileStatus,
+	GitStatusResult,
+} from "@shared/contracts";
 import { invoke, subscribe } from "../../api";
 import { useI18n, useT } from "../../i18n";
 import { StatusIcon } from "../agents/StatusIcon";
@@ -136,6 +141,9 @@ export function ChangesPanel({ workspaceId }: { workspaceId: string }) {
 	const [commitMessage, setCommitMessage] = useState("");
 	const [commitBusy, setCommitBusy] = useState(false);
 	const [commitNotice, setCommitNotice] = useState<{ level: "success" | "error"; text: string } | null>(null);
+	const [history, setHistory] = useState<GitCommitSummary[] | null>(null);
+	const [historyLoading, setHistoryLoading] = useState(false);
+	const [historyError, setHistoryError] = useState<string | null>(null);
 	const [fileDialog, setFileDialog] = useState<FileDialogState | null>(null);
 	const [fileDialogLoading, setFileDialogLoading] = useState(false);
 	const [externalBusy, setExternalBusy] = useState(false);
@@ -168,9 +176,32 @@ export function ChangesPanel({ workspaceId }: { workspaceId: string }) {
 		[workspaceId, locale],
 	);
 
+	const loadHistory = useCallback(async () => {
+		setHistoryLoading(true);
+		try {
+			const result = await invoke<GitCommitSummary[]>({
+				op: "git.log",
+				workspaceId,
+				limit: 30,
+			});
+			if (workspaceRef.current !== workspaceId) return;
+			setHistory(Array.isArray(result) ? result : []);
+			setHistoryError(null);
+		} catch (error) {
+			if (workspaceRef.current !== workspaceId) return;
+			setHistoryError(errorText(error, locale));
+		} finally {
+			if (workspaceRef.current === workspaceId) setHistoryLoading(false);
+		}
+	}, [workspaceId, locale]);
+
 	useEffect(() => {
 		void refreshStatus();
 	}, [refreshStatus]);
+
+	useEffect(() => {
+		void loadHistory();
+	}, [loadHistory]);
 
 	useEffect(() => {
 		workspaceRef.current = workspaceId;
@@ -184,6 +215,8 @@ export function ChangesPanel({ workspaceId }: { workspaceId: string }) {
 		setFileDialog(null);
 		setCommitMessage("");
 		setCommitNotice(null);
+		setHistory(null);
+		setHistoryError(null);
 		setActionError(null);
 	}, [workspaceId]);
 
@@ -281,6 +314,7 @@ export function ChangesPanel({ workspaceId }: { workspaceId: string }) {
 				text: hash ? t("changes.commitCreatedHash", { hash }) : t("changes.commitCreated"),
 			});
 			await refreshStatus(true);
+			void loadHistory();
 		} catch (error) {
 			const code = errorCode(error);
 			setCommitNotice({
@@ -666,6 +700,48 @@ export function ChangesPanel({ workspaceId }: { workspaceId: string }) {
 								<StatusIcon kind={commitNotice.level === "success" ? "success" : "error"} />
 								<span>{commitNotice.text}</span>
 							</p>
+						) : null}
+					</section>
+
+					<section className="omp-commit" aria-labelledby="omp-history-title">
+						<header className="omp-section-head">
+							<h3 id="omp-history-title">{t("changes.historyTitle")}</h3>
+							<span className="omp-muted">
+								{history && history.length > 0
+									? t("changes.historyCount", { count: history.length })
+									: ""}
+							</span>
+						</header>
+						{historyLoading ? <p className="omp-muted">{t("changes.historyLoading")}</p> : null}
+						{historyError ? (
+							<p className="omp-message omp-message-error" role="alert">
+								<StatusIcon kind="error" /> {historyError}
+							</p>
+						) : null}
+						{!historyLoading && !historyError && history && history.length === 0 ? (
+							<p className="omp-muted">{t("changes.historyEmpty")}</p>
+						) : null}
+						{history && history.length > 0 ? (
+							<ul className="omp-commit-history">
+								{history.map((commit) => (
+									<li key={commit.hash} className="omp-commit-history__item">
+										<span className="mono omp-commit-history__hash">
+											{commit.shortHash}
+										</span>
+										<span
+											className="omp-commit-history__subject"
+											title={commit.subject}
+										>
+											{commit.subject}
+										</span>
+										<span className="omp-muted omp-commit-history__meta">
+											{commit.author} ·{" "}
+											{formatDateTime(Date.parse(commit.date), locale) ??
+												commit.date}
+										</span>
+									</li>
+								))}
+							</ul>
 						) : null}
 					</section>
 				</div>

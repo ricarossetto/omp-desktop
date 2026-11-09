@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.5.0 — abas e configurações no estilo OpenCode/Bancada
+
+Mecânicas portadas do projeto local `opencode/app` (Bancada, Rust/egui), que
+reconstrói o OpenCode desktop.
+
+### Abas
+
+- Barra de abas horizontal: uma aba por sessão, com ponto do projeto, título
+  truncado, indicador de trabalho e fechar.
+- Reordenação por arrasto; a ordem é persistida.
+- Fechar pela aba/atalho pede confirmação quando há trabalho ativo.
+- `+` cria uma sessão no projeto ativo.
+- Layout horizontal (barra superior) ou vertical (barra lateral) em
+  Configurações → Aparência.
+- Atalhos: `Ctrl+T` nova sessão, `Ctrl+W` fechar, `Alt+↑/↓` aba anterior/próxima.
+
+### Configurações
+
+- Navegação lateral com Geral, Aparência, Modelos, Contas, Aprovações, Atalhos e
+  Sobre.
+- Largura da conversa: focada (488), confortável (744) ou ampla (1000).
+- Movimento: seguir o sistema, reduzido ou completo.
+- Aba Atalhos com a referência das teclas.
+- Aba Sobre com versão do app, OMP, Bun, plataforma, assinatura e licença.
+
+### Testes
+
+- Aceitação de abas (criar, trocar, fechar) e configurações (navegação,
+  atalhos, sobre, layout).
+
+## 0.4.0 — super app: aprovações, histórico, temas e preview
+
+Inspirado no que o [apoc/omp-desktop](https://github.com/apoc/omp-desktop) (MIT)
+tem de melhor, reimplementado na arquitetura Electron + host Bun deste projeto.
+
+### Aprovações
+
+- Modos `always-ask`, `always-ask-cached`, `write` e `yolo` aplicados por
+  `--approval-mode` no processo OMP.
+- Padrão global + override por projeto em Configurações → Aprovações; o seletor
+  do rodapé aplica ao projeto ativo.
+- Trocar o modo reinicia a sessão com `--resume` (histórico preservado); sessões
+  ocupadas aplicam o modo quando o turno termina.
+
+### Composer
+
+- Histórico de prompts por sessão: ↑/↓ recupera, Ctrl+↑ abre a busca; o
+  transcript preenche o histórico ao reabrir.
+
+### Aparência
+
+- Temas `aurora`, `phosphor` e `daylight`, além de escuro/claro/sistema.
+- Cor de acento personalizada, densidade confortável/compacta e escala da
+  interface (zoom).
+
+### Arquivos
+
+- Preview embutido de texto e imagens raster; "Abrir externamente" continua
+  disponível.
+- Lightbox para imagens da conversa.
+
+### Git
+
+- Histórico recente de commits no painel Alterações (hash, assunto, autor e
+  data).
+
+### Testes
+
+- Unitários para histórico de prompts e resolução de aprovação.
+- Aceitação para aprovação, histórico de prompts, aparência, preview de arquivo
+  e histórico Git.
+
+## 0.3.2 — crash recovery and startup memory
+
+- The renderer now starts Electron's local Crashpad (`uploadToServer: false`);
+  a native crash produces a dump in `app.getPath("crashDumps")` instead of
+  ending as `Crashpad_NotConnectedToHandler` (exit code -36861) with no cause.
+- A crashed renderer is reloaded automatically (up to 3 times in 5 minutes).
+  The host keeps the session, so the snapshot is reapplied without resending a
+  prompt; after the limit the error page remains.
+- Startup restores only the active tab. Each restored tab spawns a full OMP
+  process; restoring every persisted tab at boot exhausted memory with long
+  sessions. The other tabs stay persisted and open from the session list.
+- The agents panel keeps only the selected subagent transcript in memory
+  instead of caching every transcript the user opens.
+
 ## 0.3.1 — release ready (not published)
 
 Release-ready version for the planned multiplatform release. **Not published
